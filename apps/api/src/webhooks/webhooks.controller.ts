@@ -1,18 +1,23 @@
 import { Body, Controller, HttpCode, NotFoundException, Param, Post } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CrmType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CryptoService } from '../common/crypto.service';
 import { CRM_EVENTS_QUEUE, CrmEventJob } from '../delivery/delivery.types';
 
 /**
  * Публичные эндпоинты для вебхуков CRM. Аутентификация — секретом в URL.
- * Отвечаем 200 сразу, обработка идёт в очереди.
+ * Отвечаем 200 сразу, обработка идёт в очереди. Rate-limit отключён —
+ * CRM легитимно шлёт всплески событий.
  */
 @Controller('webhooks')
+@SkipThrottle()
 export class WebhooksController {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly crypto: CryptoService,
     @InjectQueue(CRM_EVENTS_QUEUE) private readonly queue: Queue<CrmEventJob>,
   ) {}
 
@@ -39,7 +44,7 @@ export class WebhooksController {
     if (connection.type === 'BITRIX24' && connection.appToken) {
       const incoming = (body as { auth?: { application_token?: string } })?.auth
         ?.application_token;
-      if (incoming !== connection.appToken) {
+      if (incoming !== this.crypto.decrypt(connection.appToken)) {
         throw new NotFoundException();
       }
     }

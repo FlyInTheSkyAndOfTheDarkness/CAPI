@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { JwtModule } from '@nestjs/jwt';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { CryptoModule } from './common/crypto.module';
 import { AuthModule } from './auth/auth.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { ConnectionsModule } from './connections/connections.module';
@@ -33,7 +36,10 @@ import { HealthController } from './health.controller';
         },
       }),
     }),
+    // Глобальный rate-limit: 120 запросов за 60с на IP (переопределяется на роутах)
+    ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }] }),
     PrismaModule,
+    CryptoModule,
     AuthModule,
     WorkspacesModule,
     ConnectionsModule,
@@ -44,5 +50,6 @@ import { HealthController } from './health.controller';
     LogsModule,
   ],
   controllers: [HealthController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

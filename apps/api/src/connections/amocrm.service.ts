@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CrmConnection } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CryptoService } from '../common/crypto.service';
 
 export interface CrmContactInfo {
   email?: string;
@@ -23,6 +24,7 @@ export class AmocrmService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly crypto: CryptoService,
   ) {}
 
   get redirectUri(): string {
@@ -49,7 +51,7 @@ export class AmocrmService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_id: connection.clientId,
-        client_secret: connection.clientSecret,
+        client_secret: this.crypto.decrypt(connection.clientSecret),
         grant_type: 'authorization_code',
         code,
         redirect_uri: this.redirectUri,
@@ -68,8 +70,8 @@ export class AmocrmService {
       where: { id: connection.id },
       data: {
         baseUrl,
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
+        accessToken: this.crypto.encrypt(data.access_token),
+        refreshToken: this.crypto.encrypt(data.refresh_token),
         tokenExpiresAt: new Date(Date.now() + (data.expires_in ?? 86400) * 1000),
         status: 'ACTIVE',
       },
@@ -93,16 +95,16 @@ export class AmocrmService {
       fresh.tokenExpiresAt &&
       fresh.tokenExpiresAt.getTime() < Date.now() + 5 * 60 * 1000;
     if (!needsRefresh) {
-      return fresh.accessToken;
+      return this.crypto.decrypt(fresh.accessToken)!;
     }
     const res = await fetch(`${fresh.baseUrl}/oauth2/access_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_id: fresh.clientId,
-        client_secret: fresh.clientSecret,
+        client_secret: this.crypto.decrypt(fresh.clientSecret),
         grant_type: 'refresh_token',
-        refresh_token: fresh.refreshToken,
+        refresh_token: this.crypto.decrypt(fresh.refreshToken),
         redirect_uri: this.redirectUri,
       }),
     });
@@ -120,7 +122,7 @@ export class AmocrmService {
         retry.tokenExpiresAt &&
         retry.tokenExpiresAt.getTime() > Date.now() + 60 * 1000
       ) {
-        return retry.accessToken;
+        return this.crypto.decrypt(retry.accessToken)!;
       }
       this.logger.error(`Не удалось обновить токен amoCRM для ${connection.id}`);
       await this.prisma.crmConnection.update({
@@ -133,8 +135,9 @@ export class AmocrmService {
     await this.prisma.crmConnection.update({
       where: { id: connection.id },
       data: {
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token ?? fresh.refreshToken,
+        accessToken: this.crypto.encrypt(data.access_token),
+        // Новый refresh шифруем; если amoCRM его не прислал — оставляем текущий (уже зашифрован)
+        refreshToken: data.refresh_token ? this.crypto.encrypt(data.refresh_token) : fresh.refreshToken,
         tokenExpiresAt: new Date(Date.now() + (data.expires_in ?? 86400) * 1000),
         status: 'ACTIVE',
       },

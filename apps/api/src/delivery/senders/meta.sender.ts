@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Destination } from '@prisma/client';
 import { Conversion } from '../delivery.types';
 import { hashEmail, hashPhoneForMeta, sha256 } from '../pii';
+import { CryptoService } from '../../common/crypto.service';
 
 // Marketing API живёт ~год на версию — держим в конфиге и обновляем.
 // v25.0 актуальна на июль 2026 (v21–v23 уже истекли).
@@ -14,8 +15,11 @@ export interface SendResult {
 
 @Injectable()
 export class MetaSender {
+  constructor(private readonly crypto: CryptoService) {}
+
   async send(destination: Destination, conversion: Conversion): Promise<SendResult> {
     const config = (destination.config ?? {}) as { actionSource?: string; apiVersion?: string };
+    const accessToken = this.crypto.decrypt(destination.accessToken) ?? '';
     const apiVersion =
       config.apiVersion ?? process.env.META_GRAPH_API_VERSION ?? DEFAULT_GRAPH_API_VERSION;
 
@@ -54,7 +58,7 @@ export class MetaSender {
     // access_token — канонично query-параметром, не в теле
     const url =
       `https://graph.facebook.com/${apiVersion}/${destination.pixelId}/events` +
-      `?access_token=${encodeURIComponent(destination.accessToken)}`;
+      `?access_token=${encodeURIComponent(accessToken)}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

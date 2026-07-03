@@ -178,8 +178,38 @@ ID этапов: в amoCRM — `pipeline_id`/`status_id` (видны в URL ра
 npm run dev:api      # только API (watch)
 npm run dev:web      # только фронтенд
 npm run build        # прод-сборка обоих приложений
+npm test             # юнит-тесты бэкенда (jest)
 npm run db:studio    # Prisma Studio — просмотр БД
 ```
+
+## Безопасность
+
+- **Токены шифруются в БД** (AES-256-GCM): access/refresh CRM, client secret,
+  application_token Битрикс24, access token пикселей. Ключ — `ENCRYPTION_KEY`
+  (в проде задайте `openssl rand -hex 32`). Старые plaintext-записи читаются
+  прозрачно; при смене ключа ранее зашифрованные токены станут нечитаемыми.
+- **Rate-limiting** (`@nestjs/throttler`): 120 запросов/мин на IP глобально,
+  10/мин на вход и регистрацию (защита от перебора); вебхуки исключены.
+- **helmet** для security-заголовков, `trust proxy` для корректного IP за
+  обратным прокси, единый JSON-формат ошибок без утечки стек-трейсов.
+
+## Деплой (Docker)
+
+Полный стек (Postgres + Redis + API + фронт за nginx) поднимается одним compose:
+
+```bash
+cp .env.prod.example .env.prod          # заполните секреты и домены
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+Фронт (nginx) слушает `WEB_PORT` и проксирует `/api` на сервис `api`, поэтому
+CORS не требуется. API при старте применяет схему к БД (`prisma db push`).
+Для боевого домена поставьте перед nginx TLS-терминатор (Caddy/Traefik/Cloudflare)
+и укажите `PUBLIC_API_URL`/`WEB_ORIGIN` с `https://`. CI (GitHub Actions,
+`.github/workflows/ci.yml`) на каждый push собирает оба приложения и гоняет тесты.
+
+**Боевое подключение реального amoCRM** (публичный URL + доступы) описано
+пошагово в [GOING_LIVE.md](GOING_LIVE.md).
 
 ## Что дальше (не входит в MVP)
 

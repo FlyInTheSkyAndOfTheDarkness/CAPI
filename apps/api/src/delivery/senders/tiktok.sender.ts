@@ -3,13 +3,17 @@ import { Destination } from '@prisma/client';
 import { Conversion } from '../delivery.types';
 import { hashEmail, hashPhoneForTiktok, sha256 } from '../pii';
 import { SendResult } from './meta.sender';
+import { CryptoService } from '../../common/crypto.service';
 
 const EVENTS_API_URL = 'https://business-api.tiktok.com/open_api/v1.3/event/track/';
 
 @Injectable()
 export class TiktokSender {
+  constructor(private readonly crypto: CryptoService) {}
+
   async send(destination: Destination, conversion: Conversion): Promise<SendResult> {
     const config = (destination.config ?? {}) as { eventSource?: string };
+    const accessToken = this.crypto.decrypt(destination.accessToken) ?? '';
 
     const user: Record<string, string> = {};
     if (conversion.email) user.email = hashEmail(conversion.email);
@@ -42,7 +46,7 @@ export class TiktokSender {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Access-Token': destination.accessToken,
+        'Access-Token': accessToken,
       },
       body: JSON.stringify(payload),
     });

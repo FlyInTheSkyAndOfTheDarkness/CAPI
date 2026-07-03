@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Destination, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CryptoService } from '../common/crypto.service';
 import { CreateDestinationDto, UpdateDestinationDto } from './destinations.dto';
 import { MetaSender } from '../delivery/senders/meta.sender';
 import { TiktokSender } from '../delivery/senders/tiktok.sender';
@@ -10,17 +11,19 @@ import { Conversion } from '../delivery/delivery.types';
 export class DestinationsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly crypto: CryptoService,
     private readonly metaSender: MetaSender,
     private readonly tiktokSender: TiktokSender,
   ) {}
 
   toPublic(destination: Destination) {
+    const token = this.crypto.decrypt(destination.accessToken) ?? '';
     return {
       id: destination.id,
       type: destination.type,
       name: destination.name,
       pixelId: destination.pixelId,
-      accessTokenMasked: `…${destination.accessToken.slice(-6)}`,
+      accessTokenMasked: `…${token.slice(-6)}`,
       testEventCode: destination.testEventCode,
       config: destination.config,
       isActive: destination.isActive,
@@ -38,7 +41,7 @@ export class DestinationsService {
 
   async create(workspaceId: string, dto: CreateDestinationDto) {
     const destination = await this.prisma.destination.create({
-      data: { workspaceId, ...dto },
+      data: { workspaceId, ...dto, accessToken: this.crypto.encrypt(dto.accessToken) },
     });
     return this.toPublic(destination);
   }
@@ -53,10 +56,11 @@ export class DestinationsService {
 
   async update(workspaceId: string, id: string, dto: UpdateDestinationDto) {
     await this.getOwned(workspaceId, id);
-    const destination = await this.prisma.destination.update({
-      where: { id },
-      data: dto as Prisma.DestinationUpdateInput,
-    });
+    const data: Prisma.DestinationUpdateInput = { ...dto };
+    if (dto.accessToken !== undefined) {
+      data.accessToken = this.crypto.encrypt(dto.accessToken);
+    }
+    const destination = await this.prisma.destination.update({ where: { id }, data });
     return this.toPublic(destination);
   }
 

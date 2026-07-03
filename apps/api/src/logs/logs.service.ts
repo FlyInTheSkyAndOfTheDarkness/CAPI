@@ -31,7 +31,7 @@ const FUNNEL_ORDER = [
 ];
 
 /** Классификация текста ошибки в понятную категорию с подсказкой как чинить. */
-function categorizeError(message: string): { category: string; hint: string } {
+export function categorizeError(message: string): { category: string; hint: string } {
   const m = message.toLowerCase();
   if (m.includes('нет данных о клиенте')) {
     return {
@@ -45,7 +45,7 @@ function categorizeError(message: string): { category: string; hint: string } {
       hint: 'Перевыпустите access token пикселя в Events Manager и обновите направление.',
     };
   }
-  if (m.includes('обновить токен amocrm') || m.includes('не авторизовано')) {
+  if (m.includes('обновить токен') || m.includes('не авторизовано')) {
     return {
       category: 'Токен amoCRM недействителен',
       hint: 'Переподключите amoCRM через OAuth — refresh-токен истёк или был отозван.',

@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CrmConnection } from '@prisma/client';
+import { CrmConnection, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { CryptoService } from '../common/crypto.service';
 import { AmocrmService } from './amocrm.service';
 import { Bitrix24Service } from './bitrix24.service';
 import { CreateConnectionDto, UpdateConnectionDto } from './connections.dto';
@@ -22,6 +23,7 @@ export class ConnectionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly crypto: CryptoService,
     private readonly amocrm: AmocrmService,
     private readonly bitrix24: Bitrix24Service,
   ) {}
@@ -70,10 +72,10 @@ export class ConnectionsService {
         name: dto.name,
         baseUrl: dto.baseUrl.replace(/\/+$/, ''),
         clientId: dto.clientId,
-        clientSecret: dto.clientSecret,
-        appToken: dto.appToken,
-        accessToken: dto.accessToken,
-        refreshToken: dto.refreshToken,
+        clientSecret: this.crypto.encrypt(dto.clientSecret),
+        appToken: this.crypto.encrypt(dto.appToken),
+        accessToken: this.crypto.encrypt(dto.accessToken),
+        refreshToken: this.crypto.encrypt(dto.refreshToken),
         webhookSecret: randomBytes(24).toString('hex'),
         // Для Битрикс24 REST-доступ даёт сам URL вебхука; для amoCRM нужен токен
         status: dto.type === 'BITRIX24' || dto.accessToken ? 'ACTIVE' : 'PENDING',
@@ -92,13 +94,16 @@ export class ConnectionsService {
 
   async update(workspaceId: string, id: string, dto: UpdateConnectionDto) {
     await this.getOwned(workspaceId, id);
-    const connection = await this.prisma.crmConnection.update({
-      where: { id },
-      data: {
-        ...dto,
-        ...(dto.baseUrl ? { baseUrl: dto.baseUrl.replace(/\/+$/, '') } : {}),
-      },
-    });
+    // Секреты шифруем; остальные поля переносим как есть
+    const data: Prisma.CrmConnectionUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.baseUrl !== undefined) data.baseUrl = dto.baseUrl.replace(/\/+$/, '');
+    if (dto.clientId !== undefined) data.clientId = dto.clientId;
+    if (dto.clientSecret !== undefined) data.clientSecret = this.crypto.encrypt(dto.clientSecret);
+    if (dto.accessToken !== undefined) data.accessToken = this.crypto.encrypt(dto.accessToken);
+    if (dto.refreshToken !== undefined) data.refreshToken = this.crypto.encrypt(dto.refreshToken);
+    if (dto.appToken !== undefined) data.appToken = this.crypto.encrypt(dto.appToken);
+    const connection = await this.prisma.crmConnection.update({ where: { id }, data });
     return this.toPublic(connection);
   }
 
