@@ -1,0 +1,9 @@
+# Все текстовые файлы хранятся с LF (проект деплоится на Linux).
+* text=auto eol=lf
+
+# Файлы, которые ОБЯЗАНЫ быть LF (иначе ломаются на Linux/в контейнерах):
+*.sh       text eol=lf
+Dockerfile text eol=lf
+Caddyfile  text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
