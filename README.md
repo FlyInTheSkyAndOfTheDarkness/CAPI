@@ -195,21 +195,33 @@ npm run db:studio    # Prisma Studio — просмотр БД
 
 ## Деплой (Docker)
 
-Полный стек (Postgres + Redis + API + фронт за nginx) поднимается одним compose:
+Полный стек — Postgres + Redis + API + фронт с **авто-HTTPS через Caddy**
+(Let's Encrypt-сертификаты выпускаются автоматически). Фронт отдаёт SPA,
+проксирует `/api` на бэкенд и терминирует TLS — CORS не нужен, отдельный
+certbot не нужен. API при старте применяет схему к БД (`prisma db push`).
+
+**На VPS с доменом** — одной командой (Ubuntu/Debian, домен должен указывать на
+сервер, порты 80/443 открыты):
 
 ```bash
-cp .env.prod.example .env.prod          # заполните секреты и домены
+curl -fsSL https://raw.githubusercontent.com/FlyInTheSkyAndOfTheDarkness/CAPI/main/deploy-vps.sh | sudo bash
+```
+
+Скрипт ставит Docker, клонирует репозиторий, генерирует секреты в `.env.prod` и
+поднимает стек. Домен задаётся в [deploy-vps.sh](deploy-vps.sh) и
+[apps/web/Caddyfile](apps/web/Caddyfile).
+
+**Вручную:**
+```bash
+cp .env.prod.example .env.prod          # секреты и домен
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-Фронт (nginx) слушает `WEB_PORT` и проксирует `/api` на сервис `api`, поэтому
-CORS не требуется. API при старте применяет схему к БД (`prisma db push`).
-Для боевого домена поставьте перед nginx TLS-терминатор (Caddy/Traefik/Cloudflare)
-и укажите `PUBLIC_API_URL`/`WEB_ORIGIN` с `https://`. CI (GitHub Actions,
-`.github/workflows/ci.yml`) на каждый push собирает оба приложения и гоняет тесты.
+CI (GitHub Actions, `.github/workflows/ci.yml`) на каждый push собирает оба
+приложения и гоняет тесты.
 
-**Боевое подключение реального amoCRM** (публичный URL + доступы) описано
-пошагово в [GOING_LIVE.md](GOING_LIVE.md).
+**Боевое подключение реального amoCRM** (Redirect URI, доступы, проверка живой
+конверсии) описано пошагово в [GOING_LIVE.md](GOING_LIVE.md).
 
 ## Что дальше (не входит в MVP)
 

@@ -1,0 +1,29 @@
+# Caddy: авто-HTTPS (Let's Encrypt), отдача SPA и прокси /api на бэкенд.
+# Сертификаты выпускаются автоматически при первом старте (нужны открытые порты
+# 80/443 и DNS доменов на этот сервер).
+
+{
+	# Раскомментируйте и укажите почту для уведомлений об истечении сертификатов:
+	# email admin@capi.garden
+}
+
+# www → apex (канонический адрес)
+www.capi.garden {
+	redir https://capi.garden{uri} permanent
+}
+
+capi.garden {
+	encode gzip
+
+	# API — на сервис api по внутренней сети compose (префикс /api сохраняется)
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	# Всё остальное — статический SPA с fallback на index.html
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
