@@ -1,0 +1,19 @@
+{
+  "name": "capi-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @capi/api\" \"npm run dev -w @capi/web\"",
+    "dev:api": "npm run dev -w @capi/api",
+    "dev:web": "npm run dev -w @capi/web",
+    "build": "npm run build -w @capi/api && npm run build -w @capi/web",
+    "db:up": "docker compose up -d",
+    "db:push": "npm run db:push -w @capi/api",
+    "db:studio": "npm run db:studio -w @capi/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

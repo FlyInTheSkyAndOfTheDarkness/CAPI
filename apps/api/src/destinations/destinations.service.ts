@@ -1,0 +1,93 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Destination, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateDestinationDto, UpdateDestinationDto } from './destinations.dto';
+import { MetaSender } from '../delivery/senders/meta.sender';
+import { TiktokSender } from '../delivery/senders/tiktok.sender';
+import { Conversion } from '../delivery/delivery.types';
+
+@Injectable()
+export class DestinationsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metaSender: MetaSender,
+    private readonly tiktokSender: TiktokSender,
+  ) {}
+
+  toPublic(destination: Destination) {
+    return {
+      id: destination.id,
+      type: destination.type,
+      name: destination.name,
+      pixelId: destination.pixelId,
+      accessTokenMasked: `…${destination.accessToken.slice(-6)}`,
+      testEventCode: destination.testEventCode,
+      config: destination.config,
+      isActive: destination.isActive,
+      createdAt: destination.createdAt,
+    };
+  }
+
+  async list(workspaceId: string) {
+    const destinations = await this.prisma.destination.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return destinations.map((d) => this.toPublic(d));
+  }
+
+  async create(workspaceId: string, dto: CreateDestinationDto) {
+    const destination = await this.prisma.destination.create({
+      data: { workspaceId, ...dto },
+    });
+    return this.toPublic(destination);
+  }
+
+  async getOwned(workspaceId: string, id: string): Promise<Destination> {
+    const destination = await this.prisma.destination.findFirst({ where: { id, workspaceId } });
+    if (!destination) {
+      throw new NotFoundException('Направление не найдено');
+    }
+    return destination;
+  }
+
+  async update(workspaceId: string, id: string, dto: UpdateDestinationDto) {
+    await this.getOwned(workspaceId, id);
+    const destination = await this.prisma.destination.update({
+      where: { id },
+      data: dto as Prisma.DestinationUpdateInput,
+    });
+    return this.toPublic(destination);
+  }
+
+  async remove(workspaceId: string, id: string) {
+    await this.getOwned(workspaceId, id);
+    await this.prisma.destination.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  /** Отправляет тестовое событие в рекламную платформу. */
+  async sendTestEvent(workspaceId: string, id: string) {
+    const destination = await this.getOwned(workspaceId, id);
+    const conversion: Conversion = {
+      eventName: 'Lead',
+      eventTime: Math.floor(Date.now() / 1000),
+      eventId: `test-${Date.now()}`,
+      email: 'test@example.com',
+      phone: '+79990000000',
+      externalId: 'test-contact-1',
+      value: 100,
+      currency: 'RUB',
+      crmName: 'CAPI Test',
+    };
+    try {
+      const result =
+        destination.type === 'META'
+          ? await this.metaSender.send(destination, conversion)
+          : await this.tiktokSender.send(destination, conversion);
+      return { ok: true, response: result.response };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+}

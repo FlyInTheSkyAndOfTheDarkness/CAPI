@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Пользователи и воркспейсы (тенанты) ----------
+
+model User {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime          @default(now())
+  memberships  WorkspaceMember[]
+}
+
+model Workspace {
+  id           String            @id @default(cuid())
+  name         String
+  createdAt    DateTime          @default(now())
+  members      WorkspaceMember[]
+  connections  CrmConnection[]
+  destinations Destination[]
+  mappings     EventMapping[]
+  logs         DeliveryLog[]
+}
+
+model WorkspaceMember {
+  id          String     @id @default(cuid())
+  role        MemberRole @default(OWNER)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  @@unique([userId, workspaceId])
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ---------- Подключения CRM ----------
+
+enum CrmType {
+  AMOCRM
+  BITRIX24
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACTIVE
+  ERROR
+}
+
+model CrmConnection {
+  id          String  @id @default(cuid())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  type        CrmType
+  name        String
+  // amoCRM: https://subdomain.amocrm.ru
+  // Битрикс24: URL входящего вебхука вида https://portal.bitrix24.ru/rest/1/xxxxxxxx
+  baseUrl     String
+  // OAuth-креды интеграции amoCRM (создаются в настройках аккаунта amo)
+  clientId     String?
+  clientSecret String?
+  // Битрикс24: application_token исходящего вебхука — доп. проверка подлинности событий
+  appToken     String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  // Секрет в URL входящего вебхука — аутентифицирует запросы от CRM
+  webhookSecret String           @unique
+  status        ConnectionStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  mappings      EventMapping[]
+  webhookEvents WebhookEvent[]
+}
+
+// ---------- Направления отправки (рекламные платформы) ----------
+
+enum DestinationType {
+  META
+  TIKTOK
+}
+
+model Destination {
+  id          String          @id @default(cuid())
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  type        DestinationType
+  name        String
+  // Meta: Pixel ID; TikTok: event source id (pixel code / offline event set id)
+  pixelId     String
+  accessToken String
+  // Meta test_event_code / TikTok test_event_code
+  testEventCode String?
+  // Доп. настройки: { actionSource?, eventSource? }
+  config      Json?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  mappings    EventMapping[]
+}
+
+// ---------- Маппинг: этап воронки CRM -> событие конверсии ----------
+
+model EventMapping {
+  id            String        @id @default(cuid())
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId   String
+  connection    CrmConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  connectionId  String
+  destination   Destination   @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  destinationId String
+  // amoCRM: lead; Битрикс24: deal | lead
+  entityType    String        @default("lead")
+  // amoCRM: pipeline_id; Битрикс24: CATEGORY_ID сделки. null = любая воронка
+  pipelineId    String?
+  // Человекочитаемые названия (для отображения в UI, заполняются из выпадающих списков)
+  pipelineName  String?
+  statusName    String?
+  // amoCRM: status_id; Битрикс24: STAGE_ID сделки / STATUS_ID лида
+  statusId      String
+  // Lead, Purchase, CompleteRegistration и т.д.
+  eventName     String
+  sendValue     Boolean       @default(false)
+  currency      String        @default("RUB")
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+}
+
+// ---------- Логи ----------
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model DeliveryLog {
+  id             String         @id @default(cuid())
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId    String
+  mappingId      String?
+  destinationId  String?
+  connectionId   String?
+  crmEntityId    String?
+  eventName      String
+  // Сумма сделки и валюта — для аналитики выручки (заполняется из CRM)
+  value          Float?
+  valueCurrency  String?
+  // Наличие идентификаторов для матчинга — метрика качества матча (важно для CAPI)
+  hasEmail       Boolean        @default(false)
+  hasPhone       Boolean        @default(false)
+  hasExternalId  Boolean        @default(false)
+  // Защита от повторной отправки одного события: mappingId:entityId:statusId
+  dedupKey       String?        @unique
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int            @default(0)
+  requestPayload Json?
+  response       Json?
+  error          String?
+  createdAt      DateTime       @default(now())
+  sentAt         DateTime?
+
+  @@index([workspaceId, createdAt])
+}
+
+// Сырые входящие вебхуки — для отладки и повторной обработки
+model WebhookEvent {
+  id           String        @id @default(cuid())
+  connection   CrmConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  connectionId String
+  payload      Json
+  processedAt  DateTime?
+  error        String?
+  createdAt    DateTime      @default(now())
+}
