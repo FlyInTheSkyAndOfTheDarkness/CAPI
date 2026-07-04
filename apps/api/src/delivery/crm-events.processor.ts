@@ -13,6 +13,7 @@ import {
   DELIVERY_QUEUE,
   DeliveryJob,
 } from './delivery.types';
+import { buildFbc } from './pii';
 
 /**
  * Обрабатывает входящий вебхук CRM: находит подходящие маппинги
@@ -96,6 +97,8 @@ export class CrmEventsProcessor extends WorkerHost {
         if (contactId) {
           contact = await this.amocrm.getContactInfo(connection, contactId);
         }
+        // Click-id/utm — из кастомных полей лида
+        Object.assign(contact, this.amocrm.extractLeadClickIds(connection, lead.custom_fields_values));
       } catch (e) {
         this.logger.warn(`amoCRM: не удалось получить лид ${leadId}: ${String(e)}`);
       }
@@ -131,6 +134,8 @@ export class CrmEventsProcessor extends WorkerHost {
           this.logger.warn(`Bitrix24: не удалось получить контакт сделки ${entityId}: ${String(e)}`);
         }
       }
+      // Click-id — из полей сделки
+      Object.assign(contact, this.bitrix24.extractClickIds(connection, deal));
       const value = deal.OPPORTUNITY != null ? Number(deal.OPPORTUNITY) : undefined;
       await this.enqueueConversions(connection, mappings, entityId, statusId, contact, value);
     } else if (eventName.startsWith('ONCRMLEAD')) {
@@ -145,6 +150,7 @@ export class CrmEventsProcessor extends WorkerHost {
         email: lead.EMAIL?.[0]?.VALUE,
         phone: lead.PHONE?.[0]?.VALUE,
         externalId: `lead-${entityId}`,
+        ...this.bitrix24.extractClickIds(connection, lead),
       };
       const value = lead.OPPORTUNITY != null ? Number(lead.OPPORTUNITY) : undefined;
       await this.enqueueConversions(connection, mappings, entityId, statusId, contact, value);
@@ -186,9 +192,13 @@ export class CrmEventsProcessor extends WorkerHost {
         continue;
       }
 
+      const eventTime = Math.floor(Date.now() / 1000);
+      const hasClickId = Boolean(
+        contact.fbclid || contact.fbp || contact.ttclid || contact.gclid || contact.yclid,
+      );
       const conversion: Conversion = {
         eventName: mapping.eventName,
-        eventTime: Math.floor(Date.now() / 1000),
+        eventTime,
         eventId: dedupKey,
         email: contact.email,
         phone: contact.phone,
@@ -196,6 +206,18 @@ export class CrmEventsProcessor extends WorkerHost {
         value: mapping.sendValue ? value : undefined,
         currency: mapping.currency,
         crmName: connection.type === 'AMOCRM' ? 'amoCRM' : 'Bitrix24',
+        // Click-id (fbc собираем из fbclid)
+        fbc: contact.fbclid ? buildFbc(contact.fbclid, eventTime) : undefined,
+        fbp: contact.fbp,
+        ttclid: contact.ttclid,
+        gclid: contact.gclid,
+        yclid: contact.yclid,
+        // Доп. поля клиента
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        city: contact.city,
+        country: contact.country,
+        zip: contact.zip,
       };
 
       const log = await this.prisma.deliveryLog.create({
@@ -213,6 +235,7 @@ export class CrmEventsProcessor extends WorkerHost {
           hasEmail: Boolean(contact.email),
           hasPhone: Boolean(contact.phone),
           hasExternalId: Boolean(contact.externalId),
+          hasClickId,
           dedupKey,
           status: 'PENDING',
         },

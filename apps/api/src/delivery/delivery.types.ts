@@ -13,6 +13,23 @@ export interface Conversion {
   currency: string;
   /** Название CRM-источника — Meta требует lead_event_source для CRM-событий */
   crmName?: string;
+  // --- Click-id (сильнейший сигнал матчинга; берутся из полей лида в CRM) ---
+  /** Meta: полный fbc (fb.1.<ts>.<fbclid>) — собирается из fbclid */
+  fbc?: string;
+  /** Meta: браузерный _fbp, если сохранён в CRM */
+  fbp?: string;
+  /** TikTok click id */
+  ttclid?: string;
+  /** Google click id */
+  gclid?: string;
+  /** Яндекс click id */
+  yclid?: string;
+  // --- Доп. поля клиента (хешируются перед отправкой) ---
+  firstName?: string;
+  lastName?: string;
+  city?: string;
+  country?: string;
+  zip?: string;
 }
 
 export interface CrmEventJob {

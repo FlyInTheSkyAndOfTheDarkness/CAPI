@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Destination } from '@prisma/client';
 import { Conversion } from '../delivery.types';
-import { hashEmail, hashPhoneForMeta, sha256 } from '../pii';
+import {
+  hashCountry,
+  hashEmail,
+  hashPerson,
+  hashPhoneForMeta,
+  hashZip,
+  sha256,
+} from '../pii';
 import { CryptoService } from '../../common/crypto.service';
 
 // Marketing API живёт ~год на версию — держим в конфиге и обновляем.
@@ -23,12 +30,30 @@ export class MetaSender {
     const apiVersion =
       config.apiVersion ?? process.env.META_GRAPH_API_VERSION ?? DEFAULT_GRAPH_API_VERSION;
 
-    const userData: Record<string, string[]> = {};
+    const userData: Record<string, string | string[]> = {};
     if (conversion.email) userData.em = [hashEmail(conversion.email)];
     if (conversion.phone) userData.ph = [hashPhoneForMeta(conversion.phone)];
     if (conversion.externalId) userData.external_id = [sha256(conversion.externalId)];
-    if (Object.keys(userData).length === 0) {
-      throw new Error('Meta CAPI: нет данных о клиенте (email/телефон/ID) для матчинга');
+    // Click-id — сильнейший сигнал матчинга, передаётся НЕ хешированным
+    if (conversion.fbc) userData.fbc = conversion.fbc;
+    if (conversion.fbp) userData.fbp = conversion.fbp;
+    // Доп. поля клиента (хешированные)
+    const fn = conversion.firstName && hashPerson(conversion.firstName);
+    const ln = conversion.lastName && hashPerson(conversion.lastName);
+    const ct = conversion.city && hashPerson(conversion.city);
+    const co = conversion.country && hashCountry(conversion.country);
+    const zp = conversion.zip && hashZip(conversion.zip);
+    if (fn) userData.fn = [fn];
+    if (ln) userData.ln = [ln];
+    if (ct) userData.ct = [ct];
+    if (co) userData.country = [co];
+    if (zp) userData.zp = [zp];
+
+    // Матчинг возможен, если есть хотя бы один идентификатор (в т.ч. click-id)
+    const hasIdentifier =
+      conversion.email || conversion.phone || conversion.externalId || conversion.fbc || conversion.fbp;
+    if (!hasIdentifier) {
+      throw new Error('Meta CAPI: нет данных о клиенте (email/телефон/ID/click-id) для матчинга');
     }
 
     // Спецификация Conversion Leads: event_source="crm" + lead_event_source

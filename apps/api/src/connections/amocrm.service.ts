@@ -3,11 +3,29 @@ import { ConfigService } from '@nestjs/config';
 import { CrmConnection } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
+import {
+  CLICK_ID_KEYS,
+  extractMatchFields,
+  MatchFields,
+  PERSON_KEYS,
+  RawField,
+} from '../delivery/match-fields';
 
 export interface CrmContactInfo {
   email?: string;
   phone?: string;
   externalId?: string;
+  firstName?: string;
+  lastName?: string;
+  city?: string;
+  country?: string;
+  zip?: string;
+  // click-id (обычно на лиде; мержатся отдельно)
+  fbclid?: string;
+  fbp?: string;
+  ttclid?: string;
+  gclid?: string;
+  yclid?: string;
 }
 
 /** Нормализованная воронка со списком этапов — общий формат для amoCRM и Битрикс24. */
@@ -226,17 +244,23 @@ export class AmocrmService {
       price?: number;
       pipeline_id?: number;
       status_id?: number;
+      custom_fields_values?: AmoField[] | null;
       _embedded?: { contacts?: Array<{ id: number }> };
     }>(connection, `/api/v4/leads/${leadId}?with=contacts`);
+  }
+
+  /** Click-id/utm обычно на лиде — извлекаем из его кастомных полей. */
+  extractLeadClickIds(
+    connection: CrmConnection,
+    fields: AmoField[] | null | undefined,
+  ): MatchFields {
+    return extractMatchFields(toRawFields(fields), fieldMapOf(connection), CLICK_ID_KEYS);
   }
 
   async getContactInfo(connection: CrmConnection, contactId: number): Promise<CrmContactInfo> {
     const contact = await this.request<{
       id: number;
-      custom_fields_values?: Array<{
-        field_code?: string;
-        values?: Array<{ value?: string | number }>;
-      }>;
+      custom_fields_values?: AmoField[] | null;
     }>(connection, `/api/v4/contacts/${contactId}`);
 
     const byCode = (code: string): string | undefined => {
@@ -245,10 +269,36 @@ export class AmocrmService {
       return value != null ? String(value) : undefined;
     };
 
+    // Доп. поля (город/страна/индекс/имя) — из кастомных полей контакта
+    const person = extractMatchFields(
+      toRawFields(contact.custom_fields_values),
+      fieldMapOf(connection),
+      PERSON_KEYS,
+    );
+
     return {
       email: byCode('EMAIL'),
       phone: byCode('PHONE'),
       externalId: String(contact.id),
+      ...person,
     };
   }
+}
+
+interface AmoField {
+  field_name?: string;
+  field_code?: string;
+  values?: Array<{ value?: string | number }>;
+}
+
+function toRawFields(fields: AmoField[] | null | undefined): RawField[] {
+  return (fields ?? []).map((f) => ({
+    name: f.field_name,
+    code: f.field_code,
+    value: f.values?.[0]?.value ?? null,
+  }));
+}
+
+function fieldMapOf(connection: CrmConnection): Record<string, string> | null {
+  return (connection.fieldMap as Record<string, string> | null) ?? null;
 }

@@ -78,6 +78,9 @@ model CrmConnection {
   tokenExpiresAt DateTime?
   // Секрет в URL входящего вебхука — аутентифицирует запросы от CRM
   webhookSecret String           @unique
+  // Явный маппинг полей CRM на ключи матчинга (переопределяет авто-детект):
+  // { "gclid": "FIELD_NAME", "fbclid": "...", "city": "...", ... }
+  fieldMap      Json?
   status        ConnectionStatus @default(PENDING)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -162,6 +165,8 @@ model DeliveryLog {
   hasEmail       Boolean        @default(false)
   hasPhone       Boolean        @default(false)
   hasExternalId  Boolean        @default(false)
+  // Наличие click-id (fbclid/gclid/ttclid/yclid) — сильнейший сигнал матчинга
+  hasClickId     Boolean        @default(false)
   // Защита от повторной отправки одного события: mappingId:entityId:statusId
   dedupKey       String?        @unique
   status         DeliveryStatus @default(PENDING)

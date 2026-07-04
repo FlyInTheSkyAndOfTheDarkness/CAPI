@@ -264,6 +264,7 @@ export default function Analytics() {
               <p className="text-sm text-slate-500">Пока нет доставок.</p>
             ) : (
               <div className="space-y-3">
+                {mqBar('Click-id (fbclid/gclid/ttclid)', mq!.click_id)}
                 {mqBar('Email', mq!.email)}
                 {mqBar('Телефон', mq!.phone)}
                 {mqBar('External ID', mq!.external_id)}

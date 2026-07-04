@@ -5,6 +5,7 @@ import type { BreakdownRow, ErrorRow, FilterOptions, FunnelRow, Stats } from '..
 import { Card, PageHeader, Select } from '../components/ui';
 import DeliveryChart, { DeliveryTable, STATUS_SERIES } from '../components/DeliveryChart';
 import { BreakdownCard, ErrorSummary, Funnel } from '../components/analytics';
+import AdvisorPanel from '../components/AdvisorPanel';
 
 const RANGES = [
   { days: 7, label: '7 дней' },
@@ -182,6 +183,10 @@ export default function Dashboard() {
               </div>
             </Card>
           ))}
+        </div>
+
+        <div className="mb-6">
+          <AdvisorPanel />
         </div>
 
         <Card className="mb-6">

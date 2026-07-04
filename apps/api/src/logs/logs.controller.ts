@@ -89,6 +89,11 @@ export class LogsController {
     return this.logsService.filterOptions(workspaceId);
   }
 
+  @Get('advisor')
+  advisor(@WorkspaceId() workspaceId: string) {
+    return this.logsService.advisor(workspaceId);
+  }
+
   private filters(query?: Record<string, string>): AnalyticsFilters {
     return {
       connectionId: query?.connectionId || undefined,

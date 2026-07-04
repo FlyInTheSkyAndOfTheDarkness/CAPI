@@ -34,3 +34,34 @@ export function hashPhoneForMeta(phone: string): string {
 export function hashPhoneForTiktok(phone: string): string {
   return sha256(`+${normalizePhoneDigits(phone)}`);
 }
+
+/**
+ * Имя/город: lowercase + trim, только буквы (убираем пробелы, пунктуацию, цифры) —
+ * нормализация Meta/TikTok для fn/ln/ct. Возвращает undefined, если после
+ * очистки пусто (чтобы не слать хеш пустой строки).
+ */
+export function hashPerson(value: string): string | undefined {
+  const norm = value.trim().toLowerCase().replace(/[^\p{L}]/gu, '');
+  return norm ? sha256(norm) : undefined;
+}
+
+/** Страна: 2-буквенный код в нижнем регистре, если распознан; иначе как есть. */
+export function hashCountry(value: string): string | undefined {
+  const norm = value.trim().toLowerCase().replace(/[^\p{L}]/gu, '');
+  return norm ? sha256(norm) : undefined;
+}
+
+/** Индекс: lowercase, без пробелов. */
+export function hashZip(value: string): string | undefined {
+  const norm = value.trim().toLowerCase().replace(/\s+/g, '');
+  return norm ? sha256(norm) : undefined;
+}
+
+/**
+ * Собирает Meta fbc из fbclid: fb.1.<время_клика_мс>.<fbclid>.
+ * Если значение уже в формате fb.1.* — возвращаем как есть.
+ */
+export function buildFbc(fbclid: string, eventTimeSec: number): string {
+  if (fbclid.startsWith('fb.')) return fbclid;
+  return `fb.1.${eventTimeSec * 1000}.${fbclid}`;
+}

@@ -130,6 +130,21 @@ export interface FilterOptions {
   eventNames: string[];
 }
 
+export interface AdvisorRec {
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  detail: string;
+  metric?: string;
+}
+
+export interface AdvisorData {
+  score: number;
+  level: 'good' | 'warn' | 'bad';
+  summary: string;
+  recommendations: AdvisorRec[];
+  period: string;
+}
+
 export interface TrendPoint {
   date: string;
   sent: number;
@@ -157,7 +172,14 @@ export interface AnalyticsData {
   successTrend: TrendPoint[];
   latency: { avg: number; median: number; p90: number; count: number };
   reliability: { first_try: number; retried: number; failed: number };
-  matchQuality: { total: number; email: number; phone: number; external_id: number; none: number };
+  matchQuality: {
+    total: number;
+    email: number;
+    phone: number;
+    external_id: number;
+    click_id: number;
+    none: number;
+  };
   value: {
     total: number;
     count: number;

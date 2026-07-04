@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CrmConnection } from '@prisma/client';
 import { CrmContactInfo, NormalizedPipeline } from './amocrm.service';
+import { CLICK_ID_KEYS, extractMatchFields, MatchFields, RawField } from '../delivery/match-fields';
 
 /**
  * Работает через входящий вебхук Битрикс24 (baseUrl вида
@@ -66,7 +67,7 @@ export class Bitrix24Service {
   }
 
   async getDeal(connection: CrmConnection, dealId: string) {
-    return this.call<{
+    return this.call<Record<string, unknown> & {
       ID: string;
       STAGE_ID?: string;
       CATEGORY_ID?: string;
@@ -77,7 +78,7 @@ export class Bitrix24Service {
   }
 
   async getLead(connection: CrmConnection, leadId: string) {
-    return this.call<{
+    return this.call<Record<string, unknown> & {
       ID: string;
       STATUS_ID?: string;
       OPPORTUNITY?: string;
@@ -87,9 +88,24 @@ export class Bitrix24Service {
     }>(connection, 'crm.lead.get', { id: leadId });
   }
 
+  /** Click-id из полей сделки/лида (по fieldMap или ключу поля UF_CRM_*). */
+  extractClickIds(connection: CrmConnection, entity: Record<string, unknown>): MatchFields {
+    const raw: RawField[] = Object.entries(entity).map(([k, v]) => ({
+      name: k,
+      code: k,
+      value: typeof v === 'string' || typeof v === 'number' ? v : null,
+    }));
+    return extractMatchFields(raw, fieldMapOf(connection), CLICK_ID_KEYS);
+  }
+
   async getContactInfo(connection: CrmConnection, contactId: string): Promise<CrmContactInfo> {
     const contact = await this.call<{
       ID: string;
+      NAME?: string;
+      LAST_NAME?: string;
+      ADDRESS_CITY?: string;
+      ADDRESS_COUNTRY?: string;
+      ADDRESS_POSTAL_CODE?: string;
       EMAIL?: Array<{ VALUE?: string }>;
       PHONE?: Array<{ VALUE?: string }>;
     }>(connection, 'crm.contact.get', { id: contactId });
@@ -97,6 +113,15 @@ export class Bitrix24Service {
       email: contact.EMAIL?.[0]?.VALUE,
       phone: contact.PHONE?.[0]?.VALUE,
       externalId: String(contact.ID),
+      firstName: contact.NAME || undefined,
+      lastName: contact.LAST_NAME || undefined,
+      city: contact.ADDRESS_CITY || undefined,
+      country: contact.ADDRESS_COUNTRY || undefined,
+      zip: contact.ADDRESS_POSTAL_CODE || undefined,
     };
   }
+}
+
+function fieldMapOf(connection: CrmConnection): Record<string, string> | null {
+  return (connection.fieldMap as Record<string, string> | null) ?? null;
 }

@@ -19,8 +19,10 @@ export class TiktokSender {
     if (conversion.email) user.email = hashEmail(conversion.email);
     if (conversion.phone) user.phone = hashPhoneForTiktok(conversion.phone);
     if (conversion.externalId) user.external_id = sha256(conversion.externalId);
+    // TikTok click id — НЕ хешируется, сильно улучшает матчинг
+    if (conversion.ttclid) user.ttclid = conversion.ttclid;
     if (Object.keys(user).length === 0) {
-      throw new Error('TikTok Events API: нет данных о клиенте (email/телефон/ID) для матчинга');
+      throw new Error('TikTok Events API: нет данных о клиенте (email/телефон/ID/ttclid) для матчинга');
     }
 
     const event: Record<string, unknown> = {

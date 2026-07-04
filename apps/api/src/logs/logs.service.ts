@@ -408,17 +408,26 @@ export class LogsService {
 
     // Качество матчинга: покрытие идентификаторов
     const mqRows = await this.prisma.$queryRaw<
-      Array<{ total: number; email: number; phone: number; external_id: number; none: number }>
+      Array<{
+        total: number;
+        email: number;
+        phone: number;
+        external_id: number;
+        click_id: number;
+        none: number;
+      }>
     >`
       SELECT COUNT(*)::int AS total,
              COUNT(*) FILTER (WHERE "hasEmail")::int AS email,
              COUNT(*) FILTER (WHERE "hasPhone")::int AS phone,
              COUNT(*) FILTER (WHERE "hasExternalId")::int AS external_id,
-             COUNT(*) FILTER (WHERE NOT "hasEmail" AND NOT "hasPhone" AND NOT "hasExternalId")::int AS none
+             COUNT(*) FILTER (WHERE "hasClickId")::int AS click_id,
+             COUNT(*) FILTER (WHERE NOT "hasEmail" AND NOT "hasPhone" AND NOT "hasExternalId" AND NOT "hasClickId")::int AS none
       FROM "DeliveryLog"
       WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since} ${ff}
     `;
-    const matchQuality = mqRows[0] ?? { total: 0, email: 0, phone: 0, external_id: 0, none: 0 };
+    const matchQuality =
+      mqRows[0] ?? { total: 0, email: 0, phone: 0, external_id: 0, click_id: 0, none: 0 };
 
     // Выручка по валютам (по успешно отправленным)
     const valueByCurrency = await this.prisma.$queryRaw<
@@ -472,6 +481,145 @@ export class LogsService {
       byConnection,
       byMapping,
     };
+  }
+
+  /**
+   * Советник по эффективности таргета: health-score (0-100) и приоритизированные
+   * рекомендации, как улучшить матчинг и снизить цену за конверсию (CPA/CPM).
+   */
+  async advisor(workspaceId: string) {
+    const days = 14;
+    const since = this.sinceUtc(days);
+    const [analytics, errors, brokenConnections, activeMappings, valueMappings] = await Promise.all([
+      this.analytics(workspaceId, String(days), {}),
+      this.errors(workspaceId, String(days), {}),
+      this.prisma.crmConnection.findMany({
+        where: { workspaceId, status: 'ERROR' },
+        select: { name: true },
+      }),
+      this.prisma.eventMapping.count({ where: { workspaceId, isActive: true } }),
+      this.prisma.eventMapping.count({ where: { workspaceId, isActive: true, sendValue: true } }),
+    ]);
+
+    const mq = analytics.matchQuality;
+    const ov = analytics.overview;
+    const total = mq.total;
+    const pct = (n: number) => (total > 0 ? n / total : 0);
+
+    type Rec = {
+      severity: 'critical' | 'high' | 'medium' | 'low';
+      title: string;
+      detail: string;
+      metric?: string;
+    };
+    const recs: Rec[] = [];
+
+    // Нет данных — сетап
+    if (total === 0) {
+      recs.push({
+        severity: activeMappings === 0 ? 'high' : 'medium',
+        title: 'Пока нет отправленных конверсий',
+        detail:
+          activeMappings === 0
+            ? 'Настройте подключение CRM, направление (пиксель) и маппинг этапа воронки на событие — тогда конверсии начнут уходить.'
+            : 'Маппинги есть, но событий ещё не поступало. Переведите тестовую сделку на нужный этап и проверьте «Логи доставки».',
+      });
+    }
+
+    // Сломанные подключения (критично — конверсии не отправляются)
+    for (const c of brokenConnections) {
+      recs.push({
+        severity: 'critical',
+        title: `Подключение «${c.name}» в ошибке`,
+        detail:
+          'Токен недействителен или нет доступа к CRM — конверсии не отправляются. Переподключите CRM (OAuth) и запустите «Диагностику».',
+      });
+    }
+
+    if (total > 0) {
+      const clickIdShare = pct(mq.click_id);
+      const noneShare = pct(mq.none);
+      const emailShare = pct(mq.email);
+      const phoneShare = pct(mq.phone);
+
+      // Click-id — сильнейший рычаг CPA
+      if (clickIdShare < 0.3) {
+        recs.push({
+          severity: 'high',
+          title: 'Мало click-id — матчинг слабый, CPA выше',
+          detail:
+            'Click-id (fbclid/gclid/ttclid) — самый сильный сигнал сопоставления конверсии с кликом по рекламе. Настройте передачу click-id из формы сайта в поле CRM (или укажите поле в маппинге). Это заметно снижает цену за конверсию.',
+          metric: `click-id есть у ${Math.round(clickIdShare * 100)}% конверсий`,
+        });
+      }
+
+      // Конверсии без идентификаторов вовсе
+      if (noneShare > 0.1) {
+        recs.push({
+          severity: noneShare > 0.3 ? 'high' : 'medium',
+          title: 'Конверсии без идентификаторов не матчатся',
+          detail:
+            'У части конверсий нет ни email/телефона, ни click-id — платформа почти не сможет их сопоставить, бюджет тратится впустую. Проверьте, что форма сайта заполняет контакт и передаёт click-id в CRM.',
+          metric: `${Math.round(noneShare * 100)}% без единого идентификатора`,
+        });
+      }
+
+      // Второй идентификатор повышает match rate
+      if (emailShare > 0.5 && phoneShare < 0.3) {
+        recs.push({
+          severity: 'low',
+          title: 'Добавьте телефон к email',
+          detail:
+            'Второй идентификатор (телефон) повышает долю сматченных конверсий. Убедитесь, что телефон заполняется в карточке контакта CRM.',
+          metric: `телефон есть у ${Math.round(phoneShare * 100)}%`,
+        });
+      }
+
+      // Доля успешных доставок
+      if (ov.successRate != null && ov.successRate < 0.9) {
+        const top = errors[0];
+        recs.push({
+          severity: ov.successRate < 0.7 ? 'high' : 'medium',
+          title: 'Часть конверсий не доходит до платформы',
+          detail: top
+            ? `Основная причина отказов: «${top.category}». ${top.hint}`
+            : 'Откройте «Сводку ошибок» на дашборде и устраните основные причины отказов.',
+          metric: `success rate ${Math.round(ov.successRate * 100)}%`,
+        });
+      }
+
+      // Оптимизация по ценности
+      if (valueMappings === 0 && activeMappings > 0) {
+        recs.push({
+          severity: 'low',
+          title: 'Включите передачу суммы для value-оптимизации',
+          detail:
+            'Ни один маппинг не передаёт сумму сделки. С суммой платформа может оптимизировать не на количество, а на ценность (ROAS) — выгоднее при разных чеках.',
+        });
+      }
+    }
+
+    // Health-score: матчинг (есть сильный идентификатор) + click-id + доставка
+    const matchScore = total > 0 ? (total - mq.none) / total : 0;
+    const clickScore = total > 0 ? mq.click_id / total : 0;
+    const successScore = ov.successRate ?? (total > 0 ? 1 : 0);
+    const score =
+      total === 0 && brokenConnections.length === 0
+        ? 0
+        : Math.round(100 * (0.45 * matchScore + 0.25 * clickScore + 0.3 * successScore));
+
+    const order = { critical: 0, high: 1, medium: 2, low: 3 };
+    recs.sort((a, b) => order[a.severity] - order[b.severity]);
+
+    const level = score >= 80 ? 'good' : score >= 55 ? 'warn' : 'bad';
+    const summary =
+      total === 0
+        ? 'Недостаточно данных — настройте отправку конверсий.'
+        : recs.length === 0
+          ? 'Матчинг и доставка в порядке — так держать.'
+          : `Найдено ${recs.length} рекомендаций для снижения цены за конверсию.`;
+
+    return { score, level, summary, recommendations: recs, period: `${days}d` };
   }
 
   async filterOptions(workspaceId: string) {
