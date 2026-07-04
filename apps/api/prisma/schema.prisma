@@ -182,6 +182,19 @@ model DeliveryLog {
   @@index([workspaceId, createdAt])
 }
 
+// Настройки push-алертов воркспейса (Telegram)
+model AlertSettings {
+  id               String    @id @default(cuid())
+  workspaceId      String    @unique
+  enabled          Boolean   @default(false)
+  telegramBotToken String? // шифруется
+  telegramChatId   String?
+  // Подпись последнего отправленного набора проблем — чтобы не спамить
+  lastSignature    String?
+  lastSentAt       DateTime?
+  updatedAt        DateTime  @updatedAt
+}
+
 // Сырые входящие вебхуки — для отладки и повторной обработки
 model WebhookEvent {
   id           String        @id @default(cuid())

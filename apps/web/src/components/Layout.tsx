@@ -8,6 +8,7 @@ const NAV = [
   { to: '/destinations', label: 'Направления' },
   { to: '/mappings', label: 'Маппинг событий' },
   { to: '/logs', label: 'Логи доставки' },
+  { to: '/alerts', label: 'Уведомления' },
 ];
 
 export default function Layout() {

@@ -9,6 +9,7 @@ import Connections from './pages/Connections';
 import Destinations from './pages/Destinations';
 import Mappings from './pages/Mappings';
 import Logs from './pages/Logs';
+import Alerts from './pages/Alerts';
 
 export default function App() {
   const { me, loading } = useAuth();
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/destinations" element={<Destinations />} />
         <Route path="/mappings" element={<Mappings />} />
         <Route path="/logs" element={<Logs />} />
+        <Route path="/alerts" element={<Alerts />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

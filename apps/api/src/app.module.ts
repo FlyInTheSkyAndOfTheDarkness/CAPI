@@ -4,6 +4,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { CryptoModule } from './common/crypto.module';
 import { AuthModule } from './auth/auth.module';
@@ -14,6 +15,7 @@ import { MappingsModule } from './mappings/mappings.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { LogsModule } from './logs/logs.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -38,6 +40,7 @@ import { HealthController } from './health.controller';
     }),
     // Глобальный rate-limit: 120 запросов за 60с на IP (переопределяется на роутах)
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }] }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     CryptoModule,
     AuthModule,
@@ -48,6 +51,7 @@ import { HealthController } from './health.controller';
     WebhooksModule,
     DeliveryModule,
     LogsModule,
+    AlertsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
