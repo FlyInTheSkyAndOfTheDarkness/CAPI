@@ -3,8 +3,7 @@ import { Destination, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
 import { CreateDestinationDto, UpdateDestinationDto } from './destinations.dto';
-import { MetaSender } from '../delivery/senders/meta.sender';
-import { TiktokSender } from '../delivery/senders/tiktok.sender';
+import { SenderRegistry } from '../delivery/senders/sender.registry';
 import { Conversion } from '../delivery/delivery.types';
 
 @Injectable()
@@ -12,8 +11,7 @@ export class DestinationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
-    private readonly metaSender: MetaSender,
-    private readonly tiktokSender: TiktokSender,
+    private readonly registry: SenderRegistry,
   ) {}
 
   toPublic(destination: Destination) {
@@ -81,14 +79,16 @@ export class DestinationsService {
       phone: '+79990000000',
       externalId: 'test-contact-1',
       value: 100,
-      currency: 'RUB',
+      currency: 'KZT',
       crmName: 'CAPI Test',
+      // Тестовые click-id — чтобы проверить path матчинга по кликам
+      fbc: 'fb.1.1700000000000.testfbclid',
+      ttclid: 'test-ttclid',
+      gclid: 'test-gclid',
+      yclid: 'test-yclid',
     };
     try {
-      const result =
-        destination.type === 'META'
-          ? await this.metaSender.send(destination, conversion)
-          : await this.tiktokSender.send(destination, conversion);
+      const result = await this.registry.send(destination, conversion);
       return { ok: true, response: result.response };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };

@@ -3,8 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { MetaSender } from './senders/meta.sender';
-import { TiktokSender } from './senders/tiktok.sender';
+import { SenderRegistry } from './senders/sender.registry';
 import { DELIVERY_QUEUE, DeliveryJob } from './delivery.types';
 
 /** Отправляет конверсию в рекламную платформу с ретраями (BullMQ backoff). */
@@ -14,8 +13,7 @@ export class DeliveryProcessor extends WorkerHost {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly metaSender: MetaSender,
-    private readonly tiktokSender: TiktokSender,
+    private readonly registry: SenderRegistry,
   ) {
     super();
   }
@@ -34,10 +32,7 @@ export class DeliveryProcessor extends WorkerHost {
 
     const attempts = job.attemptsMade + 1;
     try {
-      const result =
-        destination.type === 'META'
-          ? await this.metaSender.send(destination, conversion)
-          : await this.tiktokSender.send(destination, conversion);
+      const result = await this.registry.send(destination, conversion);
 
       await this.prisma.deliveryLog.update({
         where: { id: logId },

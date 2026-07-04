@@ -93,6 +93,8 @@ model CrmConnection {
 enum DestinationType {
   META
   TIKTOK
+  GOOGLE_ADS
+  YANDEX
 }
 
 model Destination {

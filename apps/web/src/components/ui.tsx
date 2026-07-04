@@ -75,6 +75,8 @@ const BADGE_STYLES: Record<string, string> = {
   BITRIX24: 'bg-blue-100 text-blue-700',
   META: 'bg-indigo-100 text-indigo-700',
   TIKTOK: 'bg-slate-900 text-white',
+  GOOGLE_ADS: 'bg-amber-100 text-amber-700',
+  YANDEX: 'bg-red-100 text-red-700',
 };
 
 const BADGE_LABELS: Record<string, string> = {
@@ -88,6 +90,8 @@ const BADGE_LABELS: Record<string, string> = {
   BITRIX24: 'Битрикс24',
   META: 'Meta',
   TIKTOK: 'TikTok',
+  GOOGLE_ADS: 'Google Ads',
+  YANDEX: 'Яндекс',
 };
 
 export function Badge({ value }: { value: string }) {

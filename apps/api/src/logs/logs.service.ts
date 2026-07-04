@@ -227,7 +227,13 @@ export class LogsService {
         where: { workspaceId },
         select: { id: true, name: true, type: true },
       });
-      labels = new Map(ds.map((d) => [d.id, `${d.name} · ${d.type === 'META' ? 'Meta' : 'TikTok'}`]));
+      const typeLabel: Record<string, string> = {
+        META: 'Meta',
+        TIKTOK: 'TikTok',
+        GOOGLE_ADS: 'Google Ads',
+        YANDEX: 'Яндекс',
+      };
+      labels = new Map(ds.map((d) => [d.id, `${d.name} · ${typeLabel[d.type] ?? d.type}`]));
     } else if (by === 'connection') {
       const cs = await this.prisma.crmConnection.findMany({
         where: { workspaceId },

@@ -21,9 +21,11 @@ export interface Connection {
   createdAt: string;
 }
 
+export type DestinationKind = 'META' | 'TIKTOK' | 'GOOGLE_ADS' | 'YANDEX';
+
 export interface Destination {
   id: string;
-  type: 'META' | 'TIKTOK';
+  type: DestinationKind;
   name: string;
   pixelId: string;
   accessTokenMasked: string;

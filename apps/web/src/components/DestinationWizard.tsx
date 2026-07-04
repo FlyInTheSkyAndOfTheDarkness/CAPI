@@ -1,45 +1,89 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
-import type { Destination } from '../lib/types';
+import type { Destination, DestinationKind } from '../lib/types';
 import { Button, Field, Input } from './ui';
-
-type DestType = 'META' | 'TIKTOK';
 
 const STEPS = ['Платформа', 'Реквизиты', 'Проверка'];
 
-// Подсказки где взять реквизиты — снимают неочевидность настройки пикселя
-const GUIDE: Record<
-  DestType,
-  { title: string; desc: string; pixelLabel: string; pixelHint: string; tokenHint: string }
-> = {
+interface ConfigField {
+  key: string;
+  label: string;
+  hint?: string;
+  required?: boolean;
+}
+
+interface Guide {
+  title: string;
+  desc: string;
+  pixelLabel: string;
+  pixelHint: string;
+  tokenLabel: string;
+  tokenHint: string;
+  hasTestCode?: boolean;
+  configFields?: ConfigField[];
+}
+
+const GUIDE: Record<DestinationKind, Guide> = {
   META: {
     title: 'Meta (Facebook / Instagram)',
     desc: 'Conversions API — серверные события в Meta Ads',
     pixelLabel: 'Pixel ID',
     pixelHint: 'Events Manager → Источники данных → ваш пиксель (ID под названием).',
+    tokenLabel: 'Access Token',
     tokenHint: 'Events Manager → Настройки → Conversions API → Сгенерировать токен доступа.',
+    hasTestCode: true,
   },
   TIKTOK: {
     title: 'TikTok',
     desc: 'Events API — серверные события в TikTok Ads',
     pixelLabel: 'Event Source ID (CRM Event Set ID)',
     pixelHint: 'Events Manager → создайте источник данных «CRM» → его CRM Event Set ID.',
+    tokenLabel: 'Access Token',
     tokenHint: 'TikTok Events Manager → сгенерируйте Access Token для источника.',
+    hasTestCode: true,
+  },
+  GOOGLE_ADS: {
+    title: 'Google Ads',
+    desc: 'Enhanced Conversions for Leads — офлайн-конверсии по gclid',
+    pixelLabel: 'Customer ID (без дефисов)',
+    pixelHint: 'Google Ads → ID аккаунта вверху справа (10 цифр).',
+    tokenLabel: 'OAuth refresh token',
+    tokenHint: 'Получается через OAuth-приложение Google (offline access).',
+    configFields: [
+      { key: 'developerToken', label: 'Developer token', hint: 'Google Ads API Center (нужно одобрение Google)', required: true },
+      { key: 'conversionActionId', label: 'Conversion Action ID', hint: 'ID действия-конверсии в Google Ads', required: true },
+      { key: 'clientId', label: 'OAuth Client ID', required: true },
+      { key: 'clientSecret', label: 'OAuth Client Secret', required: true },
+      { key: 'loginCustomerId', label: 'Login Customer ID (MCC, необязательно)' },
+    ],
+  },
+  YANDEX: {
+    title: 'Яндекс.Метрика',
+    desc: 'Офлайн-конверсии по yclid → цель Метрики',
+    pixelLabel: 'Номер счётчика Метрики',
+    pixelHint: 'Яндекс.Метрика → настройки счётчика → номер счётчика.',
+    tokenLabel: 'OAuth-токен',
+    tokenHint: 'oauth.yandex.ru → токен с доступом к API Метрики.',
+    configFields: [
+      { key: 'goal', label: 'Идентификатор цели (target)', hint: 'Имя офлайн-цели в Метрике', required: true },
+    ],
   },
 };
 
 export default function DestinationWizard({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
-  const [type, setType] = useState<DestType | null>(null);
+  const [type, setType] = useState<DestinationKind | null>(null);
   const [created, setCreated] = useState<Destination | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   const [form, setForm] = useState({ name: '', pixelId: '', accessToken: '', testEventCode: '' });
+  const [config, setConfig] = useState<Record<string, string>>({});
 
-  const chooseType = (t: DestType) => {
+  const chooseType = (t: DestinationKind) => {
     setType(t);
+    setConfig({});
     setStep(1);
   };
 
@@ -49,6 +93,8 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError('');
     try {
+      const cfg: Record<string, string> = {};
+      for (const [k, v] of Object.entries(config)) if (v.trim()) cfg[k] = v.trim();
       const dest = await api<Destination>('/destinations', {
         method: 'POST',
         body: {
@@ -57,6 +103,7 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
           pixelId: form.pixelId,
           accessToken: form.accessToken,
           testEventCode: form.testEventCode || undefined,
+          config: Object.keys(cfg).length ? cfg : undefined,
         },
       });
       setCreated(dest);
@@ -109,7 +156,7 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
       {/* Шаг 1 — платформа */}
       {step === 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {(['META', 'TIKTOK'] as const).map((t) => (
+          {(['META', 'TIKTOK', 'GOOGLE_ADS', 'YANDEX'] as const).map((t) => (
             <button
               key={t}
               onClick={() => chooseType(t)}
@@ -129,7 +176,7 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
             <Input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Основной пиксель"
+              placeholder="Основной аккаунт"
               required
             />
           </Field>
@@ -142,7 +189,7 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
           </Field>
           <p className="-mt-2 text-xs text-slate-500">{guide.pixelHint}</p>
 
-          <Field label="Access Token">
+          <Field label={guide.tokenLabel}>
             <Input
               value={form.accessToken}
               onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
@@ -151,12 +198,27 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
           </Field>
           <p className="-mt-2 text-xs text-slate-500">{guide.tokenHint}</p>
 
-          <Field label="Test Event Code (необязательно, для проверки в разделе «Тестовые события»)">
-            <Input
-              value={form.testEventCode}
-              onChange={(e) => setForm({ ...form, testEventCode: e.target.value })}
-            />
-          </Field>
+          {guide.configFields?.map((cf) => (
+            <div key={cf.key}>
+              <Field label={cf.label}>
+                <Input
+                  value={config[cf.key] ?? ''}
+                  onChange={(e) => setConfig({ ...config, [cf.key]: e.target.value })}
+                  required={cf.required}
+                />
+              </Field>
+              {cf.hint && <p className="-mt-2 text-xs text-slate-500">{cf.hint}</p>}
+            </div>
+          ))}
+
+          {guide.hasTestCode && (
+            <Field label="Test Event Code (необязательно, для проверки в «Тестовых событиях»)">
+              <Input
+                value={form.testEventCode}
+                onChange={(e) => setForm({ ...form, testEventCode: e.target.value })}
+              />
+            </Field>
+          )}
 
           <div className="flex gap-2">
             <Button type="button" variant="secondary" onClick={() => setStep(0)}>
@@ -173,8 +235,8 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
       {step === 2 && created && (
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Направление <b>{created.name}</b> создано. Отправьте тестовое событие, чтобы убедиться,
-            что токен и Pixel ID верны:
+            Направление <b>{created.name}</b> создано. Отправьте тестовое событие, чтобы проверить
+            реквизиты:
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={sendTest}>
