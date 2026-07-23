@@ -3,10 +3,13 @@ import { DestinationsService } from './destinations.service';
 import { CreateDestinationDto, UpdateDestinationDto } from './destinations.dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
-import { WorkspaceId } from '../common/decorators';
+import { RolesGuard } from '../common/roles.guard';
+import { Roles, WorkspaceId } from '../common/decorators';
 
 @Controller('destinations')
-@UseGuards(JwtAuthGuard, WorkspaceGuard)
+@UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
+// Настройки направлений недоступны роли наблюдателя (VIEWER)
+@Roles('OWNER', 'ADMIN', 'MEMBER')
 export class DestinationsController {
   constructor(private readonly destinationsService: DestinationsService) {}
 

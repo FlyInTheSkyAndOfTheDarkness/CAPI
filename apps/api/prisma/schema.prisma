@@ -36,6 +36,8 @@ model WorkspaceMember {
   userId      String
   workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId String
+  // Для роли VIEWER — какие маппинги разрешено смотреть в аналитике
+  mappingAccess MappingAccess[]
 
   @@unique([userId, workspaceId])
 }
@@ -44,6 +46,19 @@ enum MemberRole {
   OWNER
   ADMIN
   MEMBER
+  // Наблюдатель: только просмотр аналитики по назначенным маппингам
+  VIEWER
+}
+
+// Доступ наблюдателя к аналитике конкретного маппинга
+model MappingAccess {
+  id        String          @id @default(cuid())
+  member    WorkspaceMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  memberId  String
+  mapping   EventMapping    @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  mappingId String
+
+  @@unique([memberId, mappingId])
 }
 
 // ---------- Подключения CRM ----------
@@ -140,6 +155,8 @@ model EventMapping {
   currency      String        @default("RUB")
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
+  // Доступ наблюдателей к аналитике этого маппинга
+  access        MappingAccess[]
 }
 
 // ---------- Логи ----------

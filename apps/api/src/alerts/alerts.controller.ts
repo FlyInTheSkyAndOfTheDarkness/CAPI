@@ -2,10 +2,13 @@ import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
 import { AlertsService, UpdateAlertsDto } from './alerts.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
-import { WorkspaceId } from '../common/decorators';
+import { RolesGuard } from '../common/roles.guard';
+import { Roles, WorkspaceId } from '../common/decorators';
 
 @Controller('alerts')
-@UseGuards(JwtAuthGuard, WorkspaceGuard)
+@UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
+// Настройки уведомлений недоступны роли наблюдателя (VIEWER)
+@Roles('OWNER', 'ADMIN', 'MEMBER')
 export class AlertsController {
   constructor(private readonly alerts: AlertsService) {}
 

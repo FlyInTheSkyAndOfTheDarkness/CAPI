@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { CryptoModule } from './common/crypto.module';
 import { AuthModule } from './auth/auth.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { MembersModule } from './members/members.module';
 import { ConnectionsModule } from './connections/connections.module';
 import { DestinationsModule } from './destinations/destinations.module';
 import { MappingsModule } from './mappings/mappings.module';
@@ -45,6 +46,7 @@ import { HealthController } from './health.controller';
     CryptoModule,
     AuthModule,
     WorkspacesModule,
+    MembersModule,
     ConnectionsModule,
     DestinationsModule,
     MappingsModule,

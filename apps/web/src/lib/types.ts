@@ -1,12 +1,24 @@
+export type Role = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+
 export interface Workspace {
   id: string;
   name: string;
-  role: string;
+  role: Role;
 }
 
 export interface Me {
   user: { id: string; email: string; name?: string };
   workspaces: Workspace[];
+}
+
+export interface Member {
+  id: string;
+  userId: string;
+  email: string;
+  name?: string | null;
+  role: Role;
+  mappingIds: string[];
+  createdAt: string;
 }
 
 export interface Connection {

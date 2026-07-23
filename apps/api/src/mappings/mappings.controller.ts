@@ -14,10 +14,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateMappingDto, UpdateMappingDto } from './mappings.dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
-import { WorkspaceId } from '../common/decorators';
+import { RolesGuard } from '../common/roles.guard';
+import { Roles, WorkspaceId } from '../common/decorators';
 
 @Controller('mappings')
-@UseGuards(JwtAuthGuard, WorkspaceGuard)
+@UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
+// Маппинги недоступны роли наблюдателя (VIEWER)
+@Roles('OWNER', 'ADMIN', 'MEMBER')
 export class MappingsController {
   constructor(private readonly prisma: PrismaService) {}
 

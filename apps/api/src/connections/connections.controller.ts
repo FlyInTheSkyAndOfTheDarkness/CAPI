@@ -16,9 +16,12 @@ import { ConnectionsService } from './connections.service';
 import { CreateConnectionDto, UpdateConnectionDto } from './connections.dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
-import { WorkspaceId } from '../common/decorators';
+import { RolesGuard } from '../common/roles.guard';
+import { Roles, WorkspaceId } from '../common/decorators';
 
 @Controller('connections')
+// Настройки подключений недоступны роли наблюдателя (VIEWER)
+@Roles('OWNER', 'ADMIN', 'MEMBER')
 export class ConnectionsController {
   constructor(
     private readonly connectionsService: ConnectionsService,
@@ -50,19 +53,19 @@ export class ConnectionsController {
 
   // --- Защищённые эндпоинты ---
   @Get()
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   list(@WorkspaceId() workspaceId: string) {
     return this.connectionsService.list(workspaceId);
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   create(@WorkspaceId() workspaceId: string, @Body() dto: CreateConnectionDto) {
     return this.connectionsService.create(workspaceId, dto);
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   update(
     @WorkspaceId() workspaceId: string,
     @Param('id') id: string,
@@ -72,37 +75,37 @@ export class ConnectionsController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   remove(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
     return this.connectionsService.remove(workspaceId, id);
   }
 
   @Post(':id/test')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   test(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
     return this.connectionsService.test(workspaceId, id);
   }
 
   @Get(':id/amocrm/oauth-url')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   amocrmOauthUrl(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
     return this.connectionsService.getAmocrmAuthorizeUrl(workspaceId, id);
   }
 
   @Get(':id/pipelines')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   pipelines(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
     return this.connectionsService.getPipelines(workspaceId, id);
   }
 
   @Post(':id/amocrm/webhook')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   subscribeWebhook(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
     return this.connectionsService.ensureAmocrmWebhook(workspaceId, id);
   }
 
   @Get(':id/diagnostics')
-  @UseGuards(JwtAuthGuard, WorkspaceGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceGuard, RolesGuard)
   diagnostics(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
     return this.connectionsService.diagnostics(workspaceId, id);
   }

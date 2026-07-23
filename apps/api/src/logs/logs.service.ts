@@ -6,6 +6,9 @@ export interface AnalyticsFilters {
   connectionId?: string;
   destinationId?: string;
   eventName?: string;
+  // Ограничение по набору маппингов (роль VIEWER). undefined = без ограничения;
+  // пустой массив = доступа нет (результат пустой).
+  mappingIds?: string[];
 }
 
 type StatusKey = 'sent' | 'failed' | 'pending' | 'skipped';
@@ -104,6 +107,7 @@ export class LogsService {
       ...(f.connectionId ? { connectionId: f.connectionId } : {}),
       ...(f.destinationId ? { destinationId: f.destinationId } : {}),
       ...(f.eventName ? { eventName: f.eventName } : {}),
+      ...(f.mappingIds ? { mappingId: { in: f.mappingIds } } : {}),
     };
   }
 
@@ -119,6 +123,7 @@ export class LogsService {
       ...(f.connectionId ? { connectionId: f.connectionId } : {}),
       ...(f.destinationId ? { destinationId: f.destinationId } : {}),
       ...(f.eventName ? { eventName: f.eventName } : {}),
+      ...(f.mappingIds ? { mappingId: { in: f.mappingIds } } : {}),
     };
   }
 
@@ -128,7 +133,15 @@ export class LogsService {
       ${f.connectionId ? Prisma.sql`AND "connectionId" = ${f.connectionId}` : Prisma.empty}
       ${f.destinationId ? Prisma.sql`AND "destinationId" = ${f.destinationId}` : Prisma.empty}
       ${f.eventName ? Prisma.sql`AND "eventName" = ${f.eventName}` : Prisma.empty}
+      ${this.mappingFilterSql(f)}
     `;
+  }
+
+  /** Ограничение по набору маппингов для raw-запросов (пустой набор = ничего). */
+  private mappingFilterSql(f: AnalyticsFilters): Prisma.Sql {
+    if (!f.mappingIds) return Prisma.empty;
+    if (f.mappingIds.length === 0) return Prisma.sql`AND FALSE`;
+    return Prisma.sql`AND "mappingId" IN (${Prisma.join(f.mappingIds)})`;
   }
 
   async stats(workspaceId: string, days: string | undefined, f: AnalyticsFilters) {
@@ -148,9 +161,7 @@ export class LogsService {
       FROM "DeliveryLog"
       WHERE "workspaceId" = ${workspaceId}
         AND "createdAt" >= ${since}
-        ${f.connectionId ? Prisma.sql`AND "connectionId" = ${f.connectionId}` : Prisma.empty}
-        ${f.destinationId ? Prisma.sql`AND "destinationId" = ${f.destinationId}` : Prisma.empty}
-        ${f.eventName ? Prisma.sql`AND "eventName" = ${f.eventName}` : Prisma.empty}
+        ${this.filterSql(f)}
       GROUP BY 1, 2
     `;
 
@@ -171,11 +182,24 @@ export class LogsService {
     const finished = counts.SENT + counts.FAILED;
     const successRate = finished > 0 ? counts.SENT / finished : null;
 
-    const [connections, destinations, mappings] = await Promise.all([
-      this.prisma.crmConnection.count({ where: { workspaceId } }),
-      this.prisma.destination.count({ where: { workspaceId } }),
-      this.prisma.eventMapping.count({ where: { workspaceId, isActive: true } }),
-    ]);
+    // Наблюдателю показываем счётчики только по его маппингам
+    const scopedMappings = f.mappingIds
+      ? await this.prisma.eventMapping.findMany({
+          where: { workspaceId, id: { in: f.mappingIds } },
+          select: { connectionId: true, destinationId: true, isActive: true },
+        })
+      : null;
+    const [connections, destinations, mappings] = scopedMappings
+      ? [
+          new Set(scopedMappings.map((m) => m.connectionId)).size,
+          new Set(scopedMappings.map((m) => m.destinationId)).size,
+          scopedMappings.filter((m) => m.isActive).length,
+        ]
+      : await Promise.all([
+          this.prisma.crmConnection.count({ where: { workspaceId } }),
+          this.prisma.destination.count({ where: { workspaceId } }),
+          this.prisma.eventMapping.count({ where: { workspaceId, isActive: true } }),
+        ]);
 
     return {
       period: `${numDays}d`,
@@ -628,7 +652,34 @@ export class LogsService {
     return { score, level, summary, recommendations: recs, period: `${days}d` };
   }
 
-  async filterOptions(workspaceId: string) {
+  async filterOptions(workspaceId: string, mappingIds?: string[]) {
+    // Наблюдателю — только подключения/направления/события его маппингов
+    if (mappingIds) {
+      if (mappingIds.length === 0) {
+        return { connections: [], destinations: [], eventNames: [] };
+      }
+      const mappings = await this.prisma.eventMapping.findMany({
+        where: { workspaceId, id: { in: mappingIds } },
+        select: { connectionId: true, destinationId: true, eventName: true },
+      });
+      const connectionIds = [...new Set(mappings.map((m) => m.connectionId))];
+      const destinationIds = [...new Set(mappings.map((m) => m.destinationId))];
+      const [connections, destinations] = await Promise.all([
+        this.prisma.crmConnection.findMany({
+          where: { workspaceId, id: { in: connectionIds } },
+          select: { id: true, name: true, type: true },
+          orderBy: { name: 'asc' },
+        }),
+        this.prisma.destination.findMany({
+          where: { workspaceId, id: { in: destinationIds } },
+          select: { id: true, name: true, type: true },
+          orderBy: { name: 'asc' },
+        }),
+      ]);
+      const eventNames = [...new Set(mappings.map((m) => m.eventName))].sort();
+      return { connections, destinations, eventNames };
+    }
+
     const [connections, destinations, events] = await Promise.all([
       this.prisma.crmConnection.findMany({
         where: { workspaceId },

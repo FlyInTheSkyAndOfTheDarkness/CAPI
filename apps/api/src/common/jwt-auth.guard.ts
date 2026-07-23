@@ -1,10 +1,12 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { WorkspaceContext } from './workspace-context';
 
 export interface AuthenticatedRequest extends Request {
   userId: string;
   workspaceId?: string;
+  workspace?: WorkspaceContext;
 }
 
 @Injectable()

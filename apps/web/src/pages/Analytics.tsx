@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import type { AnalyticsData, FilterOptions } from '../lib/types';
 import { Card, PageHeader, Select } from '../components/ui';
 import { BreakdownCard } from '../components/analytics';
@@ -53,6 +54,8 @@ function Delta({ text, good }: { text: string | null; good: boolean }) {
 }
 
 export default function Analytics() {
+  const { me } = useAuth();
+  const isViewer = me?.workspaces[0]?.role === 'VIEWER';
   const [range, setRange] = useState(14);
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [options, setOptions] = useState<FilterOptions | null>(null);
@@ -110,6 +113,12 @@ export default function Analytics() {
   return (
     <div>
       <PageHeader title="Аналитика" />
+
+      {isViewer && (
+        <p className="mb-6 rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600">
+          Показаны данные только по назначенным вам маппингам.
+        </p>
+      )}
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">

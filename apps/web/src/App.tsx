@@ -10,6 +10,7 @@ import Destinations from './pages/Destinations';
 import Mappings from './pages/Mappings';
 import Logs from './pages/Logs';
 import Alerts from './pages/Alerts';
+import Users from './pages/Users';
 
 export default function App() {
   const { me, loading } = useAuth();
@@ -32,6 +33,22 @@ export default function App() {
     );
   }
 
+  const role = me.workspaces[0]?.role;
+
+  // Наблюдатель: единственная доступная страница — аналитика по своим маппингам
+  if (role === 'VIEWER') {
+    return (
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/analytics" element={<Analytics />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/analytics" replace />} />
+      </Routes>
+    );
+  }
+
+  const canManageUsers = role === 'OWNER' || role === 'ADMIN';
+
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -42,6 +59,7 @@ export default function App() {
         <Route path="/mappings" element={<Mappings />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/alerts" element={<Alerts />} />
+        {canManageUsers && <Route path="/users" element={<Users />} />}
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

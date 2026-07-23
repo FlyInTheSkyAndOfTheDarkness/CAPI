@@ -1,7 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import type { Role } from '../lib/types';
 
-const NAV = [
+const FULL_NAV = [
   { to: '/', label: 'Дашборд' },
   { to: '/analytics', label: 'Аналитика' },
   { to: '/connections', label: 'Подключения CRM' },
@@ -10,9 +11,20 @@ const NAV = [
   { to: '/logs', label: 'Логи доставки' },
   { to: '/alerts', label: 'Уведомления' },
 ];
+const ADMIN_NAV = [{ to: '/users', label: 'Пользователи' }];
+// Наблюдатель видит только аналитику по назначенным ему маппингам
+const VIEWER_NAV = [{ to: '/analytics', label: 'Аналитика' }];
+
+function navFor(role: Role | undefined) {
+  if (role === 'VIEWER') return VIEWER_NAV;
+  if (role === 'OWNER' || role === 'ADMIN') return [...FULL_NAV, ...ADMIN_NAV];
+  return FULL_NAV;
+}
 
 export default function Layout() {
   const { me, logout } = useAuth();
+  const role = me?.workspaces[0]?.role;
+  const NAV = navFor(role);
 
   return (
     <div className="flex min-h-screen bg-slate-50">
