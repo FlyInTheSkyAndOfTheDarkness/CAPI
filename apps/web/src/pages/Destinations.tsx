@@ -3,10 +3,13 @@ import { api } from '../lib/api';
 import type { Destination } from '../lib/types';
 import { Badge, Button, Card, PageHeader } from '../components/ui';
 import DestinationWizard from '../components/DestinationWizard';
+import DestinationEditor from '../components/DestinationEditor';
 
 export default function Destinations() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [showWizard, setShowWizard] = useState(false);
+  /** id направления, открытого на редактирование. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
@@ -32,6 +35,7 @@ export default function Destinations() {
 
   const remove = async (id: string) => {
     if (!confirm('Удалить направление? Связанные маппинги тоже удалятся.')) return;
+    if (editingId === id) setEditingId(null);
     await api(`/destinations/${id}`, { method: 'DELETE' });
     await load();
   };
@@ -80,6 +84,15 @@ export default function Destinations() {
                 <Button variant="secondary" onClick={() => sendTest(d.id)}>
                   Тестовое событие
                 </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setNotice('');
+                    setEditingId(editingId === d.id ? null : d.id);
+                  }}
+                >
+                  {editingId === d.id ? 'Закрыть' : 'Изменить'}
+                </Button>
                 <Button variant="secondary" onClick={() => toggle(d)}>
                   {d.isActive ? 'Отключить' : 'Включить'}
                 </Button>
@@ -93,6 +106,17 @@ export default function Destinations() {
               {d.accessTokenMasked}
               {d.testEventCode && <> · Test code: {d.testEventCode}</>}
             </div>
+            {editingId === d.id && (
+              <DestinationEditor
+                destination={d}
+                onCancel={() => setEditingId(null)}
+                onSaved={() => {
+                  setEditingId(null);
+                  setNotice('Направление обновлено');
+                  void load();
+                }}
+              />
+            )}
           </Card>
         ))}
       </div>

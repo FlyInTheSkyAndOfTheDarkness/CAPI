@@ -42,6 +42,8 @@ export interface Destination {
   pixelId: string;
   accessTokenMasked: string;
   testEventCode?: string | null;
+  /** Доп. настройки платформы: developerToken, goal и т.п. */
+  config?: Record<string, string> | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -80,8 +82,16 @@ export interface DailyPoint {
   skipped: number;
 }
 
+export interface PeriodInfo {
+  days: number;
+  /** Первый день периода, YYYY-MM-DD. */
+  from: string;
+  /** Последний день периода включительно. */
+  to: string;
+}
+
 export interface Stats {
-  period: string;
+  period: PeriodInfo;
   deliveries: Record<'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED', number>;
   successRate: number | null;
   connections: number;
@@ -173,7 +183,7 @@ export interface HeatCell {
 }
 
 export interface AnalyticsData {
-  period: { days: number };
+  period: PeriodInfo;
   overview: {
     total: number;
     sent: number;

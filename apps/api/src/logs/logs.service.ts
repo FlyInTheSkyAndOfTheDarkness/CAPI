@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { Period, periodDays, previousPeriod, resolvePeriod } from './period';
 
 export interface AnalyticsFilters {
   connectionId?: string;
@@ -85,25 +86,14 @@ export function categorizeError(message: string): { category: string; hint: stri
 export class LogsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private sinceUtc(days: number): Date {
-    const now = new Date();
-    return new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1)),
-    );
-  }
-
-  private clampDays(days?: string): number {
-    return Math.min(Math.max(Number(days) || 7, 1), 90);
-  }
-
   private where(
     workspaceId: string,
-    since: Date,
+    p: Period,
     f: AnalyticsFilters,
   ): Prisma.DeliveryLogWhereInput {
     return {
       workspaceId,
-      createdAt: { gte: since },
+      createdAt: { gte: p.since, lt: p.until },
       ...(f.connectionId ? { connectionId: f.connectionId } : {}),
       ...(f.destinationId ? { destinationId: f.destinationId } : {}),
       ...(f.eventName ? { eventName: f.eventName } : {}),
@@ -111,20 +101,9 @@ export class LogsService {
     };
   }
 
-  private whereBetween(
-    workspaceId: string,
-    gte: Date,
-    lt: Date,
-    f: AnalyticsFilters,
-  ): Prisma.DeliveryLogWhereInput {
-    return {
-      workspaceId,
-      createdAt: { gte, lt },
-      ...(f.connectionId ? { connectionId: f.connectionId } : {}),
-      ...(f.destinationId ? { destinationId: f.destinationId } : {}),
-      ...(f.eventName ? { eventName: f.eventName } : {}),
-      ...(f.mappingIds ? { mappingId: { in: f.mappingIds } } : {}),
-    };
+  /** SQL-фрагмент границ периода для raw-запросов. */
+  private rangeSql(p: Period): Prisma.Sql {
+    return Prisma.sql`AND "createdAt" >= ${p.since} AND "createdAt" < ${p.until}`;
   }
 
   /** SQL-фрагмент фильтров для raw-запросов. */
@@ -144,10 +123,8 @@ export class LogsService {
     return Prisma.sql`AND "mappingId" IN (${Prisma.join(f.mappingIds)})`;
   }
 
-  async stats(workspaceId: string, days: string | undefined, f: AnalyticsFilters) {
-    const numDays = this.clampDays(days);
-    const since = this.sinceUtc(numDays);
-    const where = this.where(workspaceId, since, f);
+  async stats(workspaceId: string, p: Period, f: AnalyticsFilters) {
+    const where = this.where(workspaceId, p, f);
 
     const grouped = await this.prisma.deliveryLog.groupBy({
       by: ['status'],
@@ -160,7 +137,7 @@ export class LogsService {
              COUNT(*)::int AS count
       FROM "DeliveryLog"
       WHERE "workspaceId" = ${workspaceId}
-        AND "createdAt" >= ${since}
+        ${this.rangeSql(p)}
         ${this.filterSql(f)}
       GROUP BY 1, 2
     `;
@@ -169,9 +146,8 @@ export class LogsService {
     for (const g of grouped) counts[g.status] = g._count._all;
 
     const byDay = new Map<string, Record<StatusKey, number>>();
-    for (let i = 0; i < numDays; i++) {
-      const d = new Date(since.getTime() + i * 86_400_000);
-      byDay.set(d.toISOString().slice(0, 10), { sent: 0, failed: 0, pending: 0, skipped: 0 });
+    for (const day of periodDays(p)) {
+      byDay.set(day, { sent: 0, failed: 0, pending: 0, skipped: 0 });
     }
     for (const row of raw) {
       const bucket = byDay.get(row.day);
@@ -202,7 +178,7 @@ export class LogsService {
         ]);
 
     return {
-      period: `${numDays}d`,
+      period: { days: p.days, from: p.from, to: p.to },
       deliveries: counts,
       successRate,
       connections,
@@ -214,12 +190,11 @@ export class LogsService {
 
   async breakdown(
     workspaceId: string,
-    days: string | undefined,
+    p: Period,
     by: 'destination' | 'connection' | 'event' | 'mapping',
     f: AnalyticsFilters,
   ) {
-    const since = this.sinceUtc(this.clampDays(days));
-    const where = this.where(workspaceId, since, f);
+    const where = this.where(workspaceId, p, f);
     const field: Prisma.DeliveryLogScalarFieldEnum =
       by === 'destination'
         ? 'destinationId'
@@ -298,10 +273,9 @@ export class LogsService {
       .sort((a, b) => b.total - a.total);
   }
 
-  async errors(workspaceId: string, days: string | undefined, f: AnalyticsFilters) {
-    const since = this.sinceUtc(this.clampDays(days));
+  async errors(workspaceId: string, p: Period, f: AnalyticsFilters) {
     const logs = await this.prisma.deliveryLog.findMany({
-      where: { ...this.where(workspaceId, since, f), status: 'FAILED', error: { not: null } },
+      where: { ...this.where(workspaceId, p, f), status: 'FAILED', error: { not: null } },
       select: { error: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       take: 2000,
@@ -327,11 +301,10 @@ export class LogsService {
     return [...map.values()].sort((a, b) => b.count - a.count);
   }
 
-  async funnel(workspaceId: string, days: string | undefined, f: AnalyticsFilters) {
-    const since = this.sinceUtc(this.clampDays(days));
+  async funnel(workspaceId: string, p: Period, f: AnalyticsFilters) {
     const rows = await this.prisma.deliveryLog.groupBy({
       by: ['eventName', 'status'],
-      where: this.where(workspaceId, since, f),
+      where: this.where(workspaceId, p, f),
       _count: { _all: true },
     });
     const agg = new Map<string, { sent: number; total: number }>();
@@ -355,10 +328,8 @@ export class LogsService {
 
   /** Детальная аналитика для отдельной страницы: тренд, задержка, надёжность,
    *  качество матчинга, выручка, тепловая карта, разрезы и сравнение периодов. */
-  async analytics(workspaceId: string, days: string | undefined, f: AnalyticsFilters) {
-    const numDays = this.clampDays(days);
-    const since = this.sinceUtc(numDays);
-    const prevSince = new Date(since.getTime() - numDays * 86_400_000);
+  async analytics(workspaceId: string, p: Period, f: AnalyticsFilters) {
+    const range = this.rangeSql(p);
     const ff = this.filterSql(f);
 
     const toCounts = (grouped: Array<{ status: string; _count: { _all: number } }>) => {
@@ -370,12 +341,12 @@ export class LogsService {
     const [curGrouped, prevGrouped] = await Promise.all([
       this.prisma.deliveryLog.groupBy({
         by: ['status'],
-        where: this.where(workspaceId, since, f),
+        where: this.where(workspaceId, p, f),
         _count: { _all: true },
       }),
       this.prisma.deliveryLog.groupBy({
         by: ['status'],
-        where: this.whereBetween(workspaceId, prevSince, since, f),
+        where: this.where(workspaceId, previousPeriod(p), f),
         _count: { _all: true },
       }),
     ]);
@@ -390,13 +361,12 @@ export class LogsService {
       SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
              "status"::text AS status, COUNT(*)::int AS count
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since} ${ff}
+      WHERE "workspaceId" = ${workspaceId} ${range} ${ff}
       GROUP BY 1, 2
     `;
     const trendMap = new Map<string, { sent: number; failed: number }>();
-    for (let i = 0; i < numDays; i++) {
-      const d = new Date(since.getTime() + i * 86_400_000);
-      trendMap.set(d.toISOString().slice(0, 10), { sent: 0, failed: 0 });
+    for (const day of periodDays(p)) {
+      trendMap.set(day, { sent: 0, failed: 0 });
     }
     for (const r of trendRaw) {
       const b = trendMap.get(r.day);
@@ -419,7 +389,7 @@ export class LogsService {
              COALESCE(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM ("sentAt" - "createdAt"))), 0)::float AS p90,
              COUNT(*)::int AS count
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since}
+      WHERE "workspaceId" = ${workspaceId} ${range}
         AND status = 'SENT' AND "sentAt" IS NOT NULL ${ff}
     `;
     const latency = latRows[0] ?? { avg: 0, median: 0, p90: 0, count: 0 };
@@ -432,7 +402,7 @@ export class LogsService {
              COUNT(*) FILTER (WHERE status = 'SENT' AND attempts > 1)::int AS retried,
              COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since} ${ff}
+      WHERE "workspaceId" = ${workspaceId} ${range} ${ff}
     `;
     const reliability = relRows[0] ?? { first_try: 0, retried: 0, failed: 0 };
 
@@ -454,7 +424,7 @@ export class LogsService {
              COUNT(*) FILTER (WHERE "hasClickId")::int AS click_id,
              COUNT(*) FILTER (WHERE NOT "hasEmail" AND NOT "hasPhone" AND NOT "hasExternalId" AND NOT "hasClickId")::int AS none
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since} ${ff}
+      WHERE "workspaceId" = ${workspaceId} ${range} ${ff}
     `;
     const matchQuality =
       mqRows[0] ?? { total: 0, email: 0, phone: 0, external_id: 0, click_id: 0, none: 0 };
@@ -467,7 +437,7 @@ export class LogsService {
              COALESCE(SUM("value"), 0)::float AS total,
              COUNT("value")::int AS count
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since}
+      WHERE "workspaceId" = ${workspaceId} ${range}
         AND "value" IS NOT NULL AND status = 'SENT' ${ff}
       GROUP BY 1 ORDER BY 2 DESC
     `;
@@ -478,17 +448,17 @@ export class LogsService {
              EXTRACT(HOUR FROM "createdAt" AT TIME ZONE 'UTC')::int AS hour,
              COUNT(*)::int AS count
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${since} ${ff}
+      WHERE "workspaceId" = ${workspaceId} ${range} ${ff}
       GROUP BY 1, 2
     `;
 
     const [byConnection, byMapping] = await Promise.all([
-      this.breakdown(workspaceId, days, 'connection', f),
-      this.breakdown(workspaceId, days, 'mapping', f),
+      this.breakdown(workspaceId, p, 'connection', f),
+      this.breakdown(workspaceId, p, 'mapping', f),
     ]);
 
     return {
-      period: { days: numDays },
+      period: { days: p.days, from: p.from, to: p.to },
       overview: {
         total: total(cur),
         sent: cur.SENT,
@@ -518,11 +488,10 @@ export class LogsService {
    * рекомендации, как улучшить матчинг и снизить цену за конверсию (CPA/CPM).
    */
   async advisor(workspaceId: string) {
-    const days = 14;
-    const since = this.sinceUtc(days);
+    const period = resolvePeriod({ days: '14' });
     const [analytics, errors, brokenConnections, activeMappings, valueMappings] = await Promise.all([
-      this.analytics(workspaceId, String(days), {}),
-      this.errors(workspaceId, String(days), {}),
+      this.analytics(workspaceId, period, {}),
+      this.errors(workspaceId, period, {}),
       this.prisma.crmConnection.findMany({
         where: { workspaceId, status: 'ERROR' },
         select: { name: true },
@@ -649,7 +618,7 @@ export class LogsService {
           ? 'Матчинг и доставка в порядке — так держать.'
           : `Найдено ${recs.length} рекомендаций для снижения цены за конверсию.`;
 
-    return { score, level, summary, recommendations: recs, period: `${days}d` };
+    return { score, level, summary, recommendations: recs, period: `${period.days}d` };
   }
 
   async filterOptions(workspaceId: string, mappingIds?: string[]) {

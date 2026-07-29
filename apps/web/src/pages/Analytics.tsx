@@ -5,12 +5,12 @@ import type { AnalyticsData, FilterOptions } from '../lib/types';
 import { Card, PageHeader, Select } from '../components/ui';
 import { BreakdownCard } from '../components/analytics';
 import { Heatmap, TrendChart } from '../components/charts';
+import PeriodPicker, {
+  DEFAULT_PERIOD,
+  periodParams,
+  type PeriodValue,
+} from '../components/PeriodPicker';
 
-const RANGES = [
-  { days: 7, label: '7 дней' },
-  { days: 14, label: '14 дней' },
-  { days: 30, label: '30 дней' },
-];
 const nf = new Intl.NumberFormat('ru-RU');
 
 interface Filters {
@@ -56,7 +56,7 @@ function Delta({ text, good }: { text: string | null; good: boolean }) {
 export default function Analytics() {
   const { me } = useAuth();
   const isViewer = me?.workspaces[0]?.role === 'VIEWER';
-  const [range, setRange] = useState(14);
+  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [data, setData] = useState<AnalyticsData | null>(null);
@@ -67,12 +67,12 @@ export default function Analytics() {
   }, []);
 
   const query = useCallback(() => {
-    const qs = new URLSearchParams({ days: String(range) });
+    const qs = new URLSearchParams(periodParams(period));
     if (filters.connectionId) qs.set('connectionId', filters.connectionId);
     if (filters.destinationId) qs.set('destinationId', filters.destinationId);
     if (filters.eventName) qs.set('eventName', filters.eventName);
     return qs.toString();
-  }, [range, filters]);
+  }, [period, filters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,19 +121,7 @@ export default function Analytics() {
       )}
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
-          {RANGES.map((r) => (
-            <button
-              key={r.days}
-              onClick={() => setRange(r.days)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                range === r.days ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <PeriodPicker value={period} onChange={setPeriod} />
         <div className="w-44">
           <Select value={filters.connectionId} onChange={(e) => setFilters({ ...filters, connectionId: e.target.value })}>
             <option value="">Все подключения</option>

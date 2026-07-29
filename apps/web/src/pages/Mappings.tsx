@@ -5,26 +5,60 @@ import { Badge, Button, Card, Field, Input, PageHeader, Select } from '../compon
 
 const EVENT_NAMES = ['Lead', 'Purchase', 'CompleteRegistration', 'Schedule', 'Contact', 'SubmitForm'];
 
-const EMPTY_FORM = {
+interface FormState {
+  connectionId: string;
+  destinationId: string;
+  entityType: string;
+  pipelineId: string;
+  pipelineName: string;
+  /** Этапы, выбранные из выпадающих списков CRM. */
+  statusIds: string[];
+  /** Этапы, введённые вручную (через запятую) — когда воронки не загрузились. */
+  statusText: string;
+  eventName: string;
+  sendValue: boolean;
+  currency: string;
+}
+
+const EMPTY_FORM: FormState = {
   connectionId: '',
   destinationId: '',
   entityType: 'lead',
   pipelineId: '',
   pipelineName: '',
-  statusId: '',
-  statusName: '',
+  statusIds: [],
+  statusText: '',
   eventName: 'Lead',
   sendValue: false,
   currency: 'RUB',
 };
+
+function formFromMapping(m: Mapping): FormState {
+  return {
+    connectionId: m.connection.id,
+    destinationId: m.destination.id,
+    entityType: m.entityType,
+    pipelineId: m.pipelineId ?? '',
+    pipelineName: m.pipelineName ?? '',
+    statusIds: [m.statusId],
+    statusText: m.statusId,
+    eventName: m.eventName,
+    sendValue: m.sendValue,
+    currency: m.currency,
+  };
+}
 
 export default function Mappings() {
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  /** Редактируемый маппинг; null — режим создания. */
+  const [editing, setEditing] = useState<Mapping | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
 
   // Воронки/этапы выбранного подключения
   const [pipelines, setPipelines] = useState<Pipelines | null>(null);
@@ -71,31 +105,119 @@ export default function Mappings() {
   const selectedPipeline = pipelineList.find((p) => p.id === form.pipelineId);
   // Ручной режим — если воронки не загрузились (CRM не авторизована и т.п.)
   const manualMode = !pipelinesLoading && pipelineList.length === 0;
+  // У лидов Битрикс24 воронок нет — приходит одна псевдо-воронка с пустым id.
+  // Выбирать нечего, поэтому селект воронки прячем и сразу показываем этапы.
+  const noPipelineChoice = pipelineList.length === 1 && pipelineList[0].id === '';
 
-  const create = async (e: React.FormEvent) => {
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setError('');
+    setShowForm(true);
+  };
+
+  const openEdit = (m: Mapping) => {
+    setEditing(m);
+    setForm(formFromMapping(m));
+    setError('');
+    setNotice('');
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditing(null);
+    setForm(EMPTY_FORM);
+  };
+
+  /** Выбранные этапы с названиями — из списка CRM или из ручного ввода. */
+  const chosenStatuses = (): Array<{ id: string; name?: string }> => {
+    if (manualMode) {
+      return form.statusText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((id) => ({ id }));
+    }
+    return form.statusIds.map((id) => ({
+      id,
+      name: selectedPipeline?.statuses.find((s) => s.id === id)?.name,
+    }));
+  };
+
+  const toggleStatus = (id: string) => {
+    setForm((f) => {
+      // При редактировании этап всегда ровно один
+      if (editing) return { ...f, statusIds: [id] };
+      return {
+        ...f,
+        statusIds: f.statusIds.includes(id)
+          ? f.statusIds.filter((s) => s !== id)
+          : [...f.statusIds, id],
+      };
+    });
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotice('');
+    const statuses = chosenStatuses();
+    if (statuses.length === 0) {
+      setError('Выберите хотя бы один этап воронки');
+      return;
+    }
+    setBusy(true);
     try {
-      await api('/mappings', {
-        method: 'POST',
-        body: {
-          connectionId: form.connectionId,
-          destinationId: form.destinationId,
-          entityType: form.entityType,
-          pipelineId: form.pipelineId || undefined,
-          pipelineName: form.pipelineName || undefined,
-          statusId: form.statusId,
-          statusName: form.statusName || undefined,
-          eventName: form.eventName,
-          sendValue: form.sendValue,
-          currency: form.currency,
-        },
-      });
-      setForm(EMPTY_FORM);
-      setShowForm(false);
+      if (editing) {
+        await api(`/mappings/${editing.id}`, {
+          method: 'PATCH',
+          body: {
+            connectionId: form.connectionId,
+            destinationId: form.destinationId,
+            entityType: form.entityType,
+            pipelineId: form.pipelineId,
+            pipelineName: form.pipelineName,
+            statusId: statuses[0].id,
+            // В ручном режиме названия этапа нет — сохраняем прежнее, если этап тот же
+            statusName:
+              statuses[0].name ??
+              (statuses[0].id === editing.statusId ? (editing.statusName ?? '') : ''),
+            eventName: form.eventName,
+            sendValue: form.sendValue,
+            currency: form.currency,
+          },
+        });
+        setNotice('Маппинг обновлён');
+      } else {
+        const created = await api<Mapping[]>('/mappings', {
+          method: 'POST',
+          body: {
+            connectionId: form.connectionId,
+            destinationId: form.destinationId,
+            entityType: form.entityType,
+            pipelineId: form.pipelineId || undefined,
+            pipelineName: form.pipelineName || undefined,
+            statuses,
+            eventName: form.eventName,
+            sendValue: form.sendValue,
+            currency: form.currency,
+          },
+        });
+        const skipped = statuses.length - created.length;
+        setNotice(
+          skipped > 0
+            ? `Создано маппингов: ${created.length}. Пропущено уже существующих: ${skipped}.`
+            : `Создано маппингов: ${created.length}.`,
+        );
+      }
+      closeForm();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -106,6 +228,7 @@ export default function Mappings() {
 
   const remove = async (id: string) => {
     if (!confirm('Удалить маппинг?')) return;
+    if (editing?.id === id) closeForm();
     await api(`/mappings/${id}`, { method: 'DELETE' });
     await load();
   };
@@ -115,7 +238,10 @@ export default function Mappings() {
       <PageHeader
         title="Маппинг событий"
         action={
-          <Button onClick={() => setShowForm(!showForm)} disabled={!connections.length || !destinations.length}>
+          <Button
+            onClick={() => (showForm ? closeForm() : openCreate())}
+            disabled={!connections.length || !destinations.length}
+          >
             {showForm ? 'Отмена' : '+ Добавить маппинг'}
           </Button>
         }
@@ -127,10 +253,16 @@ export default function Mappings() {
         </p>
       )}
       {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
+      {notice && (
+        <p className="mb-4 rounded-lg bg-green-50 px-4 py-2 text-sm text-green-700">{notice}</p>
+      )}
 
       {showForm && (
         <Card className="mb-6">
-          <form onSubmit={create} className="grid gap-4 md:grid-cols-3">
+          <h2 className="mb-4 font-semibold text-slate-900">
+            {editing ? 'Изменение маппинга' : 'Новый маппинг'}
+          </h2>
+          <form onSubmit={submit} className="grid gap-4 md:grid-cols-3">
             <Field label="Подключение CRM">
               <Select
                 value={form.connectionId}
@@ -141,8 +273,8 @@ export default function Mappings() {
                     entityType: 'lead',
                     pipelineId: '',
                     pipelineName: '',
-                    statusId: '',
-                    statusName: '',
+                    statusIds: [],
+                    statusText: '',
                   })
                 }
                 required
@@ -178,8 +310,8 @@ export default function Mappings() {
                     entityType: e.target.value,
                     pipelineId: '',
                     pipelineName: '',
-                    statusId: '',
-                    statusName: '',
+                    statusIds: [],
+                    statusText: '',
                   })
                 }
               >
@@ -194,47 +326,95 @@ export default function Mappings() {
 
             {!pipelinesLoading && !manualMode && (
               <>
-                <Field label="Воронка">
-                  <Select
-                    value={form.pipelineId}
-                    onChange={(e) => {
-                      const p = pipelineList.find((x) => x.id === e.target.value);
-                      setForm({
-                        ...form,
-                        pipelineId: e.target.value,
-                        pipelineName: p?.name ?? '',
-                        statusId: '',
-                        statusName: '',
-                      });
-                    }}
-                    required
-                  >
-                    <option value="">— выберите воронку —</option>
-                    {pipelineList.map((p) => (
-                      <option key={p.id || p.name} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Этап (статус)">
-                  <Select
-                    value={form.statusId}
-                    onChange={(e) => {
-                      const s = selectedPipeline?.statuses.find((x) => x.id === e.target.value);
-                      setForm({ ...form, statusId: e.target.value, statusName: s?.name ?? '' });
-                    }}
-                    required
-                    disabled={!selectedPipeline}
-                  >
-                    <option value="">— выберите этап —</option>
-                    {selectedPipeline?.statuses.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
+                {noPipelineChoice ? (
+                  <Field label="Воронка">
+                    <p className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500">
+                      У лидов воронок нет — правило сработает на любом лиде.
+                    </p>
+                  </Field>
+                ) : (
+                  <Field label="Воронка">
+                    <Select
+                      value={form.pipelineId}
+                      onChange={(e) => {
+                        const p = pipelineList.find((x) => x.id === e.target.value);
+                        setForm({
+                          ...form,
+                          pipelineId: e.target.value,
+                          pipelineName: p?.name ?? '',
+                          statusIds: [],
+                        });
+                      }}
+                      required
+                    >
+                      <option value="">— выберите воронку —</option>
+                      {pipelineList.map((p) => (
+                        <option key={p.id || p.name} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                )}
+
+                <div className="md:col-span-2">
+                  <span className="mb-1 block text-sm font-medium text-slate-700">
+                    {editing ? 'Этап (статус)' : 'Этапы (статусы) — можно выбрать несколько'}
+                  </span>
+                  {!selectedPipeline ? (
+                    <p className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500">
+                      Сначала выберите воронку.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                        {selectedPipeline.statuses.map((s) => (
+                          <label
+                            key={s.id}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                          >
+                            <input
+                              type={editing ? 'radio' : 'checkbox'}
+                              checked={form.statusIds.includes(s.id)}
+                              onChange={() => toggleStatus(s.id)}
+                            />
+                            <span>{s.name}</span>
+                            <code className="ml-auto text-xs text-slate-400">{s.id}</code>
+                          </label>
+                        ))}
+                      </div>
+                      {!editing && (
+                        <div className="mt-2 flex items-center gap-3 text-xs">
+                          <span className="text-slate-500">
+                            Выбрано: {form.statusIds.length}. На каждый этап создастся отдельный
+                            маппинг.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                statusIds: selectedPipeline.statuses.map((s) => s.id),
+                              })
+                            }
+                            className="font-medium text-indigo-600 hover:text-indigo-800"
+                          >
+                            Выбрать все
+                          </button>
+                          {form.statusIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setForm({ ...form, statusIds: [] })}
+                              className="font-medium text-slate-500 hover:text-slate-900"
+                            >
+                              Снять
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               </>
             )}
 
@@ -254,13 +434,27 @@ export default function Mappings() {
                     placeholder="пусто = любая"
                   />
                 </Field>
-                <Field label={selectedConnection?.type === 'BITRIX24' ? 'ID этапа (STAGE_ID)' : 'ID этапа (status_id)'}>
-                  <Input
-                    value={form.statusId}
-                    onChange={(e) => setForm({ ...form, statusId: e.target.value })}
-                    required
-                  />
-                </Field>
+                <div className="md:col-span-2">
+                  <Field
+                    label={
+                      selectedConnection?.type === 'BITRIX24'
+                        ? 'ID этапов (STAGE_ID)'
+                        : 'ID этапов (status_id)'
+                    }
+                  >
+                    <Input
+                      value={form.statusText}
+                      onChange={(e) => setForm({ ...form, statusText: e.target.value })}
+                      placeholder={editing ? 'C1:WON' : 'C1:WON, C1:NEW — можно несколько через запятую'}
+                      required
+                    />
+                  </Field>
+                  {!editing && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Несколько ID через запятую — на каждый создастся отдельный маппинг.
+                    </p>
+                  )}
+                </div>
               </>
             )}
 
@@ -293,8 +487,13 @@ export default function Mappings() {
               />
               Передавать сумму сделки
             </label>
-            <div className="md:col-span-3">
-              <Button type="submit">Создать маппинг</Button>
+            <div className="flex gap-2 md:col-span-3">
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Сохраняем…' : editing ? 'Сохранить изменения' : 'Создать маппинг'}
+              </Button>
+              <Button type="button" variant="secondary" onClick={closeForm}>
+                Отмена
+              </Button>
             </div>
           </form>
         </Card>
@@ -322,7 +521,12 @@ export default function Mappings() {
               </thead>
               <tbody>
                 {mappings.map((m) => (
-                  <tr key={m.id} className={`border-b border-slate-100 ${!m.isActive ? 'opacity-50' : ''}`}>
+                  <tr
+                    key={m.id}
+                    className={`border-b border-slate-100 ${!m.isActive ? 'opacity-50' : ''} ${
+                      editing?.id === m.id ? 'bg-indigo-50/60' : ''
+                    }`}
+                  >
                     <td className="px-2 py-2">{m.connection.name}</td>
                     <td className="px-2 py-2">{m.entityType === 'deal' ? 'Сделка' : 'Лид'}</td>
                     <td className="px-2 py-2">
@@ -336,6 +540,12 @@ export default function Mappings() {
                     </td>
                     <td className="px-2 py-2">{m.sendValue ? m.currency : '—'}</td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => openEdit(m)}
+                        className="mr-3 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        Изменить
+                      </button>
                       <button
                         onClick={() => toggle(m)}
                         className="mr-3 text-xs font-medium text-slate-500 hover:text-slate-900"

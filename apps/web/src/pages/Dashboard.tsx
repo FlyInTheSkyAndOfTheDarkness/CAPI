@@ -6,12 +6,11 @@ import { Card, PageHeader, Select } from '../components/ui';
 import DeliveryChart, { DeliveryTable, STATUS_SERIES } from '../components/DeliveryChart';
 import { BreakdownCard, ErrorSummary, Funnel } from '../components/analytics';
 import AdvisorPanel from '../components/AdvisorPanel';
-
-const RANGES = [
-  { days: 7, label: '7 дней' },
-  { days: 14, label: '14 дней' },
-  { days: 30, label: '30 дней' },
-];
+import PeriodPicker, {
+  DEFAULT_PERIOD,
+  periodParams,
+  type PeriodValue,
+} from '../components/PeriodPicker';
 
 const nf = new Intl.NumberFormat('ru-RU');
 
@@ -24,7 +23,7 @@ interface Filters {
 const EMPTY_FILTERS: Filters = { connectionId: '', destinationId: '', eventName: '' };
 
 export default function Dashboard() {
-  const [range, setRange] = useState(14);
+  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [options, setOptions] = useState<FilterOptions | null>(null);
 
@@ -41,12 +40,12 @@ export default function Dashboard() {
   }, []);
 
   const query = useCallback(() => {
-    const qs = new URLSearchParams({ days: String(range) });
+    const qs = new URLSearchParams(periodParams(period));
     if (filters.connectionId) qs.set('connectionId', filters.connectionId);
     if (filters.destinationId) qs.set('destinationId', filters.destinationId);
     if (filters.eventName) qs.set('eventName', filters.eventName);
     return qs.toString();
-  }, [range, filters]);
+  }, [period, filters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,19 +105,7 @@ export default function Dashboard() {
 
       {/* Фильтры: период + срез. Один ряд над всем контентом, масштабирует все блоки. */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
-          {RANGES.map((r) => (
-            <button
-              key={r.days}
-              onClick={() => setRange(r.days)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                range === r.days ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        <PeriodPicker value={period} onChange={setPeriod} />
 
         <div className="w-48">
           <Select

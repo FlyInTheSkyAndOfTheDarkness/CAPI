@@ -2,6 +2,7 @@ import { Controller, ForbiddenException, Get, Query, UseGuards } from '@nestjs/c
 import { DeliveryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogsService, AnalyticsFilters } from './logs.service';
+import { resolvePeriod } from './period';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
 import { WorkspaceScope } from '../common/decorators';
@@ -40,51 +41,39 @@ export class LogsController {
   }
 
   @Get('stats')
-  stats(
-    @WorkspaceScope() scope: WorkspaceContext,
-    @Query('days') days?: string,
-    @Query() query?: Record<string, string>,
-  ) {
-    return this.logsService.stats(scope.id, days, this.filters(query, scope));
+  stats(@WorkspaceScope() scope: WorkspaceContext, @Query() query?: Record<string, string>) {
+    return this.logsService.stats(scope.id, resolvePeriod(query), this.filters(query, scope));
   }
 
   @Get('breakdown')
   breakdown(
     @WorkspaceScope() scope: WorkspaceContext,
     @Query('by') by?: string,
-    @Query('days') days?: string,
     @Query() query?: Record<string, string>,
   ) {
     const dimension =
       by === 'connection' || by === 'event' || by === 'mapping' ? by : 'destination';
-    return this.logsService.breakdown(scope.id, days, dimension, this.filters(query, scope));
+    return this.logsService.breakdown(
+      scope.id,
+      resolvePeriod(query),
+      dimension,
+      this.filters(query, scope),
+    );
   }
 
   @Get('analytics')
-  analytics(
-    @WorkspaceScope() scope: WorkspaceContext,
-    @Query('days') days?: string,
-    @Query() query?: Record<string, string>,
-  ) {
-    return this.logsService.analytics(scope.id, days, this.filters(query, scope));
+  analytics(@WorkspaceScope() scope: WorkspaceContext, @Query() query?: Record<string, string>) {
+    return this.logsService.analytics(scope.id, resolvePeriod(query), this.filters(query, scope));
   }
 
   @Get('errors')
-  errors(
-    @WorkspaceScope() scope: WorkspaceContext,
-    @Query('days') days?: string,
-    @Query() query?: Record<string, string>,
-  ) {
-    return this.logsService.errors(scope.id, days, this.filters(query, scope));
+  errors(@WorkspaceScope() scope: WorkspaceContext, @Query() query?: Record<string, string>) {
+    return this.logsService.errors(scope.id, resolvePeriod(query), this.filters(query, scope));
   }
 
   @Get('funnel')
-  funnel(
-    @WorkspaceScope() scope: WorkspaceContext,
-    @Query('days') days?: string,
-    @Query() query?: Record<string, string>,
-  ) {
-    return this.logsService.funnel(scope.id, days, this.filters(query, scope));
+  funnel(@WorkspaceScope() scope: WorkspaceContext, @Query() query?: Record<string, string>) {
+    return this.logsService.funnel(scope.id, resolvePeriod(query), this.filters(query, scope));
   }
 
   @Get('filters')
