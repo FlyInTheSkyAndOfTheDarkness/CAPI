@@ -212,6 +212,7 @@ export class CrmEventsProcessor extends WorkerHost {
         ttclid: contact.ttclid,
         gclid: contact.gclid,
         yclid: contact.yclid,
+        leadId: contact.leadId,
         // Доп. поля клиента
         firstName: contact.firstName,
         lastName: contact.lastName,

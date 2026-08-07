@@ -17,6 +17,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { LogsModule } from './logs/logs.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { AdsModule } from './ads/ads.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -54,6 +55,7 @@ import { HealthController } from './health.controller';
     DeliveryModule,
     LogsModule,
     AlertsModule,
+    AdsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

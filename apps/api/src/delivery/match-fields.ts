@@ -12,6 +12,7 @@ export type MatchKey =
   | 'ttclid'
   | 'gclid'
   | 'yclid'
+  | 'leadId'
   | 'city'
   | 'country'
   | 'zip'
@@ -25,6 +26,8 @@ const KEYWORDS: Record<MatchKey, string[]> = {
   ttclid: ['ttclid', 'tt_clid', 'tiktok_click'],
   gclid: ['gclid', 'google_click'],
   yclid: ['yclid', 'ym_uid'],
+  // ID лида из лид-форм Meta (15–17 цифр) — идентификатор наивысшего приоритета
+  leadId: ['lead_id', 'leadid', 'fb_lead', 'id лида'],
   city: ['city', 'город'],
   country: ['country', 'страна'],
   zip: ['zip', 'postal', 'индекс', 'почтовый'],
@@ -84,5 +87,6 @@ export function extractMatchFields(
   return out;
 }
 
-export const CLICK_ID_KEYS: MatchKey[] = ['fbclid', 'fbp', 'ttclid', 'gclid', 'yclid'];
+/** Рекламные идентификаторы из полей лида/сделки: click-id + ID лида Meta. */
+export const CLICK_ID_KEYS: MatchKey[] = ['fbclid', 'fbp', 'ttclid', 'gclid', 'yclid', 'leadId'];
 export const PERSON_KEYS: MatchKey[] = ['city', 'country', 'zip', 'firstName', 'lastName'];

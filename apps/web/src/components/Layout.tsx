@@ -4,7 +4,6 @@ import type { Role } from '../lib/types';
 
 const FULL_NAV = [
   { to: '/', label: 'Дашборд' },
-  { to: '/analytics', label: 'Аналитика' },
   { to: '/connections', label: 'Подключения CRM' },
   { to: '/destinations', label: 'Направления' },
   { to: '/mappings', label: 'Маппинг событий' },
@@ -12,8 +11,8 @@ const FULL_NAV = [
   { to: '/alerts', label: 'Уведомления' },
 ];
 const ADMIN_NAV = [{ to: '/users', label: 'Пользователи' }];
-// Наблюдатель видит только аналитику по назначенным ему маппингам
-const VIEWER_NAV = [{ to: '/analytics', label: 'Аналитика' }];
+// Наблюдатель видит только дашборд с аналитикой по назначенным ему маппингам
+const VIEWER_NAV = [{ to: '/', label: 'Дашборд' }];
 
 function navFor(role: Role | undefined) {
   if (role === 'VIEWER') return VIEWER_NAV;

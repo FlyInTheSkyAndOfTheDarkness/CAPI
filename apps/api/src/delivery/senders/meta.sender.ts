@@ -12,8 +12,8 @@ import {
 import { CryptoService } from '../../common/crypto.service';
 
 // Marketing API живёт ~год на версию — держим в конфиге и обновляем.
-// v25.0 актуальна на июль 2026 (v21–v23 уже истекли).
-const DEFAULT_GRAPH_API_VERSION = 'v25.0';
+// v26.0 — версия, которую Events Manager показывает как последнюю (июль 2026).
+const DEFAULT_GRAPH_API_VERSION = 'v26.0';
 
 export interface SendResult {
   payload: Record<string, unknown>;
@@ -30,13 +30,18 @@ export class MetaSender {
     const apiVersion =
       config.apiVersion ?? process.env.META_GRAPH_API_VERSION ?? DEFAULT_GRAPH_API_VERSION;
 
-    const userData: Record<string, string | string[]> = {};
+    const userData: Record<string, string | number | string[]> = {};
     if (conversion.email) userData.em = [hashEmail(conversion.email)];
     if (conversion.phone) userData.ph = [hashPhoneForMeta(conversion.phone)];
     if (conversion.externalId) userData.external_id = [sha256(conversion.externalId)];
     // Click-id — сильнейший сигнал матчинга, передаётся НЕ хешированным
     if (conversion.fbc) userData.fbc = conversion.fbc;
     if (conversion.fbp) userData.fbp = conversion.fbp;
+    // ID лида из лид-форм Meta: приоритет матчинга выше, чем у email. Без хеша,
+    // числом — как в спецификации «Квалифицированные лиды».
+    if (conversion.leadId && /^\d+$/.test(conversion.leadId)) {
+      userData.lead_id = Number(conversion.leadId);
+    }
     // Доп. поля клиента (хешированные)
     const fn = conversion.firstName && hashPerson(conversion.firstName);
     const ln = conversion.lastName && hashPerson(conversion.lastName);
@@ -51,7 +56,12 @@ export class MetaSender {
 
     // Матчинг возможен, если есть хотя бы один идентификатор (в т.ч. click-id)
     const hasIdentifier =
-      conversion.email || conversion.phone || conversion.externalId || conversion.fbc || conversion.fbp;
+      conversion.email ||
+      conversion.phone ||
+      conversion.externalId ||
+      conversion.fbc ||
+      conversion.fbp ||
+      userData.lead_id != null;
     if (!hasIdentifier) {
       throw new Error('Meta CAPI: нет данных о клиенте (email/телефон/ID/click-id) для матчинга');
     }

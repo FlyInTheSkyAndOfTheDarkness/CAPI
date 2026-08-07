@@ -169,6 +169,36 @@ export interface AdvisorData {
   period: string;
 }
 
+/** Строка статистики Meta на уровне объявления. */
+export interface MetaAdRow {
+  campaignId: string;
+  campaignName: string;
+  adsetId: string;
+  adsetName: string;
+  adId: string;
+  adName: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  leads: number;
+  purchases: number;
+}
+
+export interface MetaAdsInsights {
+  currency: string;
+  rows: MetaAdRow[];
+  period: { from: string; to: string };
+  fetchedAt: string;
+}
+
+export interface MetaAdsCheck {
+  ok: boolean;
+  accountName?: string;
+  currency?: string;
+  error?: string;
+}
+
 export interface TrendPoint {
   date: string;
   sent: number;

@@ -24,6 +24,8 @@ export interface Conversion {
   gclid?: string;
   /** Яндекс click id */
   yclid?: string;
+  /** ID лида из лид-форм Meta — идентификатор наивысшего приоритета, шлётся без хеша */
+  leadId?: string;
   // --- Доп. поля клиента (хешируются перед отправкой) ---
   firstName?: string;
   lastName?: string;

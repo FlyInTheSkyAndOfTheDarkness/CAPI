@@ -31,6 +31,14 @@ export const GUIDE: Record<DestinationKind, Guide> = {
     tokenLabel: 'Access Token',
     tokenHint: 'Events Manager → Настройки → Conversions API → Сгенерировать токен доступа.',
     hasTestCode: true,
+    configFields: [
+      {
+        key: 'adAccountId',
+        label: 'ID рекламного кабинета (для отчёта по кампаниям, необязательно)',
+        hint:
+          'Ads Manager → ID кабинета вверху слева (число из act_…). Токен должен иметь право ads_read — иначе выпустите токен системного пользователя с доступом к кабинету.',
+      },
+    ],
   },
   TIKTOK: {
     title: 'TikTok',

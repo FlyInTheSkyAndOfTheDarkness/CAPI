@@ -26,6 +26,8 @@ export interface CrmContactInfo {
   ttclid?: string;
   gclid?: string;
   yclid?: string;
+  /** ID лида из лид-форм Meta, если он сохранён в поле CRM */
+  leadId?: string;
 }
 
 /** Нормализованная воронка со списком этапов — общий формат для amoCRM и Битрикс24. */

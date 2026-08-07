@@ -4,7 +4,6 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import Analytics from './pages/Analytics';
 import Connections from './pages/Connections';
 import Destinations from './pages/Destinations';
 import Mappings from './pages/Mappings';
@@ -35,14 +34,14 @@ export default function App() {
 
   const role = me.workspaces[0]?.role;
 
-  // Наблюдатель: единственная доступная страница — аналитика по своим маппингам
+  // Наблюдатель: единственная доступная страница — дашборд с аналитикой по своим маппингам
   if (role === 'VIEWER') {
     return (
       <Routes>
         <Route element={<Layout />}>
-          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/" element={<Dashboard />} />
         </Route>
-        <Route path="*" element={<Navigate to="/analytics" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }
@@ -53,7 +52,8 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/analytics" element={<Analytics />} />
+        {/* Аналитика переехала в дашборд — старые ссылки ведут туда же */}
+        <Route path="/analytics" element={<Navigate to="/" replace />} />
         <Route path="/connections" element={<Connections />} />
         <Route path="/destinations" element={<Destinations />} />
         <Route path="/mappings" element={<Mappings />} />
