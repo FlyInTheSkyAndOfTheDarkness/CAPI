@@ -1,0 +1,22 @@
+# Внутренний Caddy для docker-compose.server.yml: только HTTP внутри сервера,
+# TLS терминирует системный nginx (Let's Encrypt через certbot).
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	encode gzip
+
+	# API — на сервис api по внутренней сети compose (префикс /api сохраняется)
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	# Всё остальное — статический SPA с fallback на index.html
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

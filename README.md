@@ -305,17 +305,52 @@ certbot не нужен. API при старте применяет схему �
 сервер, порты 80/443 открыты):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FlyInTheSkyAndOfTheDarkness/CAPI/main/deploy-vps.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/FlyInTheSkyAndOfTheDarkness/CAPI/main/deploy-vps.sh | sudo DOMAIN=your-domain.com bash
 ```
 
 Скрипт ставит Docker, клонирует репозиторий, генерирует секреты в `.env.prod` и
-поднимает стек. Домен задаётся в [deploy-vps.sh](deploy-vps.sh) и
-[apps/web/Caddyfile](apps/web/Caddyfile).
+поднимает стек. Домен задаётся переменной `DOMAIN`; Caddy берёт её из `.env.prod`.
 
 **Вручную:**
 ```bash
 cp .env.prod.example .env.prod          # секреты и домен
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+### Несколько проектов на одном сервере (nginx уже занял 80/443)
+
+Если на сервере уже работает системный nginx с другими сайтами, Caddy из
+`docker-compose.prod.yml` не подойдёт — он займёт 80/443 целиком. Для такого
+случая есть `docker-compose.server.yml`: контейнеры CAPI слушают только
+localhost (`127.0.0.1:8095` — SPA, `127.0.0.1:8096` — API), а домен, редиректы и
+TLS обслуживает системный nginx (сертификат — через certbot).
+
+```bash
+# 1. Код и секреты
+sudo git clone https://github.com/FlyInTheSkyAndOfTheDarkness/CAPI.git /opt/capi
+cd /opt/capi
+sudo cp .env.prod.example .env.prod
+# заполните POSTGRES_PASSWORD, JWT_SECRET, ENCRYPTION_KEY, DOMAIN,
+# WEB_ORIGIN и PUBLIC_API_URL; затем: sudo chmod 600 .env.prod
+
+# 2. Контейнеры (внутри — Caddy только на HTTP, наружу ничего не публикует)
+sudo docker compose -f docker-compose.server.yml --env-file .env.prod up -d --build
+
+# 3. Сайт в nginx
+sed 's/__DOMAIN__/capi.garden/g' deploy/nginx-site.conf.template \
+  | sudo tee /etc/nginx/sites-available/capi.garden.conf
+sudo ln -sf /etc/nginx/sites-available/capi.garden.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 4. HTTPS — после того как A-запись домена указывает на этот сервер
+sudo certbot --nginx -d capi.garden -d www.capi.garden
+```
+
+Обновление после нового `git push`:
+
+```bash
+cd /opt/capi && sudo git pull \
+  && sudo docker compose -f docker-compose.server.yml --env-file .env.prod up -d --build
 ```
 
 CI (GitHub Actions, `.github/workflows/ci.yml`) на каждый push собирает оба
