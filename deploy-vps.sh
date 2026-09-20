@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 # Полный деплой CAPI на VPS (Ubuntu/Debian). Запускать от root или через sudo:
-#   curl -fsSL https://raw.githubusercontent.com/FlyInTheSkyAndOfTheDarkness/CAPI/main/deploy-vps.sh | sudo bash
-# либо: git clone ... && cd CAPI && sudo bash deploy-vps.sh
+#   curl -fsSL https://raw.githubusercontent.com/FlyInTheSkyAndOfTheDarkness/CAPI/main/deploy-vps.sh | sudo DOMAIN=example.com bash
+# либо: git clone ... && cd CAPI && sudo bash deploy-vps.sh example.com
 set -euo pipefail
 
-DOMAIN="capi.garden"
-REPO="https://github.com/FlyInTheSkyAndOfTheDarkness/CAPI.git"
-APP_DIR="/opt/capi"
+DOMAIN="${DOMAIN:-${1:-capi.garden}}"
+REPO="${REPO:-https://github.com/FlyInTheSkyAndOfTheDarkness/CAPI.git}"
+APP_DIR="${APP_DIR:-/opt/capi}"
 
 echo "==> CAPI deploy на $DOMAIN"
+
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
 
 # 1. Docker + compose-плагин
 if ! command -v docker >/dev/null 2>&1; then
@@ -39,14 +51,18 @@ cd "$APP_DIR"
 if [ ! -f .env.prod ]; then
   echo "==> Генерирую .env.prod со случайными секретами..."
   cp .env.prod.example .env.prod
-  sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" .env.prod
-  sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env.prod
-  sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$(openssl rand -hex 32)|" .env.prod
-  sed -i "s|^WEB_ORIGIN=.*|WEB_ORIGIN=https://$DOMAIN|" .env.prod
-  sed -i "s|^PUBLIC_API_URL=.*|PUBLIC_API_URL=https://$DOMAIN|" .env.prod
+  upsert_env "POSTGRES_PASSWORD" "$(openssl rand -hex 16)" .env.prod
+  upsert_env "JWT_SECRET" "$(openssl rand -hex 32)" .env.prod
+  upsert_env "ENCRYPTION_KEY" "$(openssl rand -hex 32)" .env.prod
+  upsert_env "DOMAIN" "$DOMAIN" .env.prod
+  upsert_env "WEB_ORIGIN" "https://$DOMAIN" .env.prod
+  upsert_env "PUBLIC_API_URL" "https://$DOMAIN" .env.prod
   echo "    .env.prod создан (секреты сохранены — не теряйте ENCRYPTION_KEY!)"
 else
   echo "==> .env.prod уже есть — использую существующий"
+  upsert_env "DOMAIN" "$DOMAIN" .env.prod
+  upsert_env "WEB_ORIGIN" "https://$DOMAIN" .env.prod
+  upsert_env "PUBLIC_API_URL" "https://$DOMAIN" .env.prod
 fi
 
 # 5. Сборка и запуск

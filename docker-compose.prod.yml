@@ -53,6 +53,8 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    environment:
+      DOMAIN: ${DOMAIN:?required}
     ports:
       - '80:80'
       - '443:443'
