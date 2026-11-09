@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { DestinationsService } from './destinations.service';
-import { CreateDestinationDto, UpdateDestinationDto } from './destinations.dto';
+import { CreateDestinationDto, TestDestinationDto, UpdateDestinationDto } from './destinations.dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
 import { RolesGuard } from '../common/roles.guard';
@@ -38,7 +38,11 @@ export class DestinationsController {
   }
 
   @Post(':id/test')
-  test(@WorkspaceId() workspaceId: string, @Param('id') id: string) {
-    return this.destinationsService.sendTestEvent(workspaceId, id);
+  test(
+    @WorkspaceId() workspaceId: string,
+    @Param('id') id: string,
+    @Body() dto: TestDestinationDto,
+  ) {
+    return this.destinationsService.sendTestEvent(workspaceId, id, dto?.testEventCode);
   }
 }

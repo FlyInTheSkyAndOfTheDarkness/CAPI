@@ -41,6 +41,7 @@ export interface Destination {
   name: string;
   pixelId: string;
   accessTokenMasked: string;
+  adsAccessTokenConfigured?: boolean;
   testEventCode?: string | null;
   /** Доп. настройки платформы: developerToken, goal и т.п. */
   config?: Record<string, string> | null;
@@ -97,6 +98,7 @@ export interface Stats {
   connections: number;
   destinations: number;
   mappings: number;
+  hasSuccessfulDelivery?: boolean;
   days: DailyPoint[];
 }
 

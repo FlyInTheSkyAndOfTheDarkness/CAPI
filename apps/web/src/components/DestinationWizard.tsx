@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import type { Destination, DestinationKind } from '../lib/types';
 import { Button, Field, Input } from './ui';
 import { DESTINATION_KINDS, GUIDE } from './destination-guide';
+import DestinationTest from './DestinationTest';
 
 const STEPS = ['Платформа', 'Реквизиты', 'Проверка'];
 
@@ -12,7 +13,6 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
   const [created, setCreated] = useState<Destination | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
 
   const [form, setForm] = useState({ name: '', pixelId: '', accessToken: '', testEventCode: '' });
   const [config, setConfig] = useState<Record<string, string>>({});
@@ -38,7 +38,6 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
           name: form.name,
           pixelId: form.pixelId,
           accessToken: form.accessToken,
-          testEventCode: form.testEventCode || undefined,
           config: Object.keys(cfg).length ? cfg : undefined,
         },
       });
@@ -49,15 +48,6 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
     } finally {
       setBusy(false);
     }
-  };
-
-  const sendTest = async () => {
-    if (!created) return;
-    setNotice('Отправляем тестовое событие…');
-    const r = await api<{ ok: boolean; error?: string }>(`/destinations/${created.id}/test`, {
-      method: 'POST',
-    });
-    setNotice(r.ok ? 'Тестовое событие отправлено успешно' : `Ошибка: ${r.error}`);
   };
 
   const guide = type ? GUIDE[type] : null;
@@ -87,7 +77,6 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
       </div>
 
       {error && <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
-      {notice && <p className="mb-4 rounded-lg bg-green-50 px-4 py-2 text-sm text-green-700">{notice}</p>}
 
       {/* Шаг 1 — платформа */}
       {step === 0 && (
@@ -148,7 +137,7 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
           ))}
 
           {guide.hasTestCode && (
-            <Field label="Test Event Code (необязательно, для проверки в «Тестовых событиях»)">
+            <Field label="Test Event Code для проверки (необязательно)">
               <Input
                 value={form.testEventCode}
                 onChange={(e) => setForm({ ...form, testEventCode: e.target.value })}
@@ -174,10 +163,8 @@ export default function DestinationWizard({ onDone }: { onDone: () => void }) {
             Направление <b>{created.name}</b> создано. Отправьте тестовое событие, чтобы проверить
             реквизиты:
           </p>
+          <DestinationTest destination={{ ...created, testEventCode: form.testEventCode }} />
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={sendTest}>
-              Отправить тестовое событие
-            </Button>
             <Button onClick={onDone}>Готово</Button>
           </div>
         </div>

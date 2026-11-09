@@ -1,5 +1,12 @@
-import { IsBoolean, IsEnum, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsObject, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { DestinationType } from '@prisma/client';
+
+export class TestDestinationDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  testEventCode?: string;
+}
 
 export class CreateDestinationDto {
   @IsEnum(DestinationType)
@@ -17,6 +24,11 @@ export class CreateDestinationDto {
   @IsString()
   @MinLength(1)
   accessToken: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  adsAccessToken?: string;
 
   @IsOptional()
   @IsString()
@@ -41,6 +53,12 @@ export class UpdateDestinationDto {
   @IsOptional()
   @IsString()
   accessToken?: string;
+
+  // null явно удаляет отдельный токен; отсутствие поля сохраняет прежний.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  adsAccessToken?: string | null;
 
   @IsOptional()
   @IsString()

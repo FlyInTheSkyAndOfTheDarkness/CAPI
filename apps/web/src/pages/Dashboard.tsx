@@ -158,6 +158,7 @@ export default function Dashboard() {
     { to: '/connections', label: 'Подключите amoCRM или Битрикс24', done: (stats?.connections ?? 0) > 0 },
     { to: '/destinations', label: 'Добавьте Meta Pixel или TikTok', done: (stats?.destinations ?? 0) > 0 },
     { to: '/mappings', label: 'Настройте маппинг: этап воронки → событие', done: (stats?.mappings ?? 0) > 0 },
+    { to: '/logs', label: 'Подтвердите первую успешную доставку из CRM', done: stats?.hasSuccessfulDelivery === true },
   ];
 
   const hasFilters = filters.connectionId || filters.destinationId || filters.eventName;

@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Destination, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../common/crypto.service';
@@ -22,6 +23,7 @@ export class DestinationsService {
       name: destination.name,
       pixelId: destination.pixelId,
       accessTokenMasked: `…${token.slice(-6)}`,
+      adsAccessTokenConfigured: Boolean(destination.adsAccessToken),
       testEventCode: destination.testEventCode,
       config: destination.config,
       isActive: destination.isActive,
@@ -38,8 +40,15 @@ export class DestinationsService {
   }
 
   async create(workspaceId: string, dto: CreateDestinationDto) {
+    if (dto.adsAccessToken != null && dto.type !== 'META') {
+      throw new BadRequestException('Отдельный токен статистики поддерживается только для Meta.');
+    }
     const destination = await this.prisma.destination.create({
-      data: { workspaceId, ...dto, accessToken: this.crypto.encrypt(dto.accessToken) },
+      data: {
+        workspaceId, ...dto,
+        accessToken: this.crypto.encrypt(dto.accessToken),
+        adsAccessToken: this.crypto.encrypt(dto.adsAccessToken),
+      },
     });
     return this.toPublic(destination);
   }
@@ -53,10 +62,16 @@ export class DestinationsService {
   }
 
   async update(workspaceId: string, id: string, dto: UpdateDestinationDto) {
-    await this.getOwned(workspaceId, id);
+    const current = await this.getOwned(workspaceId, id);
+    if (dto.adsAccessToken != null && current.type !== 'META') {
+      throw new BadRequestException('Отдельный токен статистики поддерживается только для Meta.');
+    }
     const data: Prisma.DestinationUpdateInput = { ...dto };
     if (dto.accessToken !== undefined) {
       data.accessToken = this.crypto.encrypt(dto.accessToken);
+    }
+    if (dto.adsAccessToken !== undefined) {
+      data.adsAccessToken = this.crypto.encrypt(dto.adsAccessToken);
     }
     const destination = await this.prisma.destination.update({ where: { id }, data });
     return this.toPublic(destination);
@@ -69,26 +84,35 @@ export class DestinationsService {
   }
 
   /** Отправляет тестовое событие в рекламную платформу. */
-  async sendTestEvent(workspaceId: string, id: string) {
+  async sendTestEvent(workspaceId: string, id: string, testEventCode?: string) {
     const destination = await this.getOwned(workspaceId, id);
+    const code = (testEventCode ?? destination.testEventCode)?.trim();
+    if ((destination.type === 'META' || destination.type === 'TIKTOK') && !code) {
+      throw new BadRequestException(
+        'Укажите Test Event Code из Events Manager. Без кода проверка отправит конверсию в рабочую статистику.',
+      );
+    }
     const conversion: Conversion = {
       eventName: 'Lead',
       eventTime: Math.floor(Date.now() / 1000),
-      eventId: `test-${Date.now()}`,
+      eventId: `test-${randomUUID()}`,
       email: 'test@example.com',
       phone: '+79990000000',
       externalId: 'test-contact-1',
       value: 100,
       currency: 'KZT',
       crmName: 'CAPI Test',
-      // Тестовые click-id — чтобы проверить path матчинга по кликам
-      fbc: 'fb.1.1700000000000.testfbclid',
+      // Не передаём выдуманный fbclid: он не подтверждает матчинг с реальным кликом.
       ttclid: 'test-ttclid',
       gclid: 'test-gclid',
       yclid: 'test-yclid',
     };
     try {
-      const result = await this.registry.send(destination, conversion);
+      // Код относится только к этому запросу; рабочее направление не меняем.
+      const result = await this.registry.send({ ...destination, testEventCode: code || null }, conversion);
+      if (destination.type === 'META' && result.response.events_received !== 1) {
+        return { ok: false, error: 'Meta не подтвердил приём тестового события.', response: result.response };
+      }
       return { ok: true, response: result.response };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };

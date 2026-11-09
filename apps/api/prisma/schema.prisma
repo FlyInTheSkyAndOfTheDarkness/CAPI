@@ -121,6 +121,8 @@ model Destination {
   // Meta: Pixel ID; TikTok: event source id (pixel code / offline event set id)
   pixelId     String
   accessToken String
+  // Отдельный зашифрованный токен Meta Insights; null = использовать accessToken
+  adsAccessToken String?
   // Meta test_event_code / TikTok test_event_code
   testEventCode String?
   // Доп. настройки: { actionSource?, eventSource? }

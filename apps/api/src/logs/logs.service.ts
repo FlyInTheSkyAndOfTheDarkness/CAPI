@@ -177,6 +177,16 @@ export class LogsService {
           this.prisma.eventMapping.count({ where: { workspaceId, isActive: true } }),
         ]);
 
+    // Проверка первоначальной настройки не зависит от выбранного периода.
+    const firstDelivery = await this.prisma.deliveryLog.findFirst({
+      where: {
+        workspaceId,
+        status: 'SENT',
+        ...(f.mappingIds ? { mappingId: { in: f.mappingIds } } : {}),
+      },
+      select: { id: true },
+    });
+
     return {
       period: { days: p.days, from: p.from, to: p.to },
       deliveries: counts,
@@ -184,6 +194,7 @@ export class LogsService {
       connections,
       destinations,
       mappings,
+      hasSuccessfulDelivery: Boolean(firstDelivery),
       days: [...byDay.entries()].map(([date, values]) => ({ date, ...values })),
     };
   }

@@ -4,12 +4,14 @@ import type { Destination } from '../lib/types';
 import { Badge, Button, Card, PageHeader } from '../components/ui';
 import DestinationWizard from '../components/DestinationWizard';
 import DestinationEditor from '../components/DestinationEditor';
+import DestinationTest from '../components/DestinationTest';
 
 export default function Destinations() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [showWizard, setShowWizard] = useState(false);
   /** id направления, открытого на редактирование. */
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
@@ -19,14 +21,6 @@ export default function Destinations() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const sendTest = async (id: string) => {
-    setNotice('Отправляем тестовое событие…');
-    const result = await api<{ ok: boolean; error?: string }>(`/destinations/${id}/test`, {
-      method: 'POST',
-    });
-    setNotice(result.ok ? 'Тестовое событие отправлено успешно' : `Ошибка: ${result.error}`);
-  };
 
   const toggle = async (d: Destination) => {
     await api(`/destinations/${d.id}`, { method: 'PATCH', body: { isActive: !d.isActive } });
@@ -81,13 +75,17 @@ export default function Destinations() {
                 {!d.isActive && <Badge value="SKIPPED" />}
               </div>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => sendTest(d.id)}>
-                  Тестовое событие
+                <Button variant="secondary" onClick={() => {
+                  setEditingId(null);
+                  setTestingId(testingId === d.id ? null : d.id);
+                }}>
+                  {testingId === d.id ? 'Закрыть проверку' : 'Тестовое событие'}
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={() => {
                     setNotice('');
+                    setTestingId(null);
                     setEditingId(editingId === d.id ? null : d.id);
                   }}
                 >
@@ -104,8 +102,9 @@ export default function Destinations() {
             <div className="mt-2 text-sm text-slate-500">
               Pixel: <code className="rounded bg-slate-100 px-1">{d.pixelId}</code> · Токен:{' '}
               {d.accessTokenMasked}
-              {d.testEventCode && <> · Test code: {d.testEventCode}</>}
+              {d.testEventCode && <> · Тестовый режим: {d.testEventCode} (все события из CRM)</>}
             </div>
+            {testingId === d.id && <DestinationTest key={d.id} destination={d} />}
             {editingId === d.id && (
               <DestinationEditor
                 destination={d}

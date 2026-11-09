@@ -228,6 +228,11 @@ export class ConnectionsService {
       }
     }
 
+    const lastEvent = await this.prisma.webhookEvent.findFirst({
+      where: { connectionId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+
     // 3. Подписка на вебхук
     if (connection.type === 'AMOCRM' && authOk) {
       try {
@@ -254,16 +259,14 @@ export class ConnectionsService {
       checks.push({
         key: 'webhook',
         label: 'Исходящий вебхук',
-        status: 'warn',
-        detail: 'Проверяется по факту приёма событий (см. ниже)',
+        status: lastEvent ? 'ok' : 'warn',
+        detail: lastEvent
+          ? 'Приём событий подтверждён. Проверьте дату последнего события ниже.'
+          : 'Сверьте URL обработчика в Битрикс24 с URL этого подключения. При пересоздании подключения URL меняется. Для сделок выберите ONCRMDEALUPDATE, для лидов — ONCRMLEADUPDATE.',
       });
     }
 
     // 4. Приём событий
-    const lastEvent = await this.prisma.webhookEvent.findFirst({
-      where: { connectionId: id },
-      orderBy: { createdAt: 'desc' },
-    });
     checks.push({
       key: 'events',
       label: 'Входящие события из CRM',
@@ -272,6 +275,19 @@ export class ConnectionsService {
         ? `Последнее событие: ${lastEvent.createdAt.toLocaleString('ru-RU')}`
         : 'Событий ещё не поступало',
     });
+
+    if (lastEvent) {
+      checks.push({
+        key: 'processing',
+        label: 'Обработка последнего вебхука',
+        status: lastEvent.error ? 'fail' : lastEvent.processedAt ? 'ok' : 'warn',
+        detail: lastEvent.error
+          ? `Ошибка обработки: ${lastEvent.error}`
+          : lastEvent.processedAt
+            ? 'Вебхук обработан. Доставка создаётся только для этапа с активным маппингом.'
+            : 'Вебхук принят, но ещё не обработан. Если статус не меняется, проверьте очередь и Redis.',
+      });
+    }
 
     // 5. Настроенные маппинги
     const mappingCount = await this.prisma.eventMapping.count({

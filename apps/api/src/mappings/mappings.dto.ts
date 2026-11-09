@@ -1,10 +1,11 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
+  IsISO4217CurrencyCode,
   IsOptional,
   IsString,
   MinLength,
@@ -71,6 +72,8 @@ export class CreateMappingDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsISO4217CurrencyCode({ message: 'Укажите код валюты ISO 4217, например KZT, USD, EUR или RUB.' })
   currency?: string;
 }
 
@@ -115,6 +118,8 @@ export class UpdateMappingDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @IsISO4217CurrencyCode({ message: 'Укажите код валюты ISO 4217, например KZT, USD, EUR или RUB.' })
   currency?: string;
 
   @IsOptional()

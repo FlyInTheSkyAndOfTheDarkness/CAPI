@@ -26,6 +26,8 @@ export default function DestinationEditor({
   });
   const [config, setConfig] = useState<Record<string, string>>({ ...(destination.config ?? {}) });
   const [busy, setBusy] = useState(false);
+  const [adsAccessToken, setAdsAccessToken] = useState('');
+  const [removeAdsToken, setRemoveAdsToken] = useState(false);
   const [error, setError] = useState('');
 
   const save = async (e: React.FormEvent) => {
@@ -42,6 +44,11 @@ export default function DestinationEditor({
           pixelId: form.pixelId,
           // Пустое поле — токен не меняем
           ...(form.accessToken.trim() ? { accessToken: form.accessToken.trim() } : {}),
+          ...(destination.type === 'META' && removeAdsToken
+            ? { adsAccessToken: null }
+            : destination.type === 'META' && adsAccessToken.trim()
+              ? { adsAccessToken: adsAccessToken.trim() }
+              : {}),
           testEventCode: form.testEventCode,
           ...(guide.configFields ? { config: cfg } : {}),
         },
@@ -77,6 +84,8 @@ export default function DestinationEditor({
 
       <Field label={guide.tokenLabel}>
         <Input
+          type="password"
+          autoComplete="new-password"
           value={form.accessToken}
           onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
           placeholder={`Сейчас: ${destination.accessTokenMasked} — оставьте пустым, чтобы не менять`}
@@ -97,13 +106,50 @@ export default function DestinationEditor({
         </div>
       ))}
 
+      {destination.type === 'META' && (
+        <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+          <Field label="Отдельный токен рекламной статистики (необязательно)">
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={adsAccessToken}
+              disabled={removeAdsToken}
+              onChange={(e) => setAdsAccessToken(e.target.value)}
+              placeholder={destination.adsAccessTokenConfigured
+                ? 'Токен сохранён — оставьте пустым, чтобы не менять'
+                : 'Токен с правом ads_read и доступом к кабинету'}
+            />
+          </Field>
+          <p className="text-xs text-slate-500">
+            Используется только для отчётов. Отправка конверсий использует основной токен.
+            Если отдельный токен не задан, статистика также запрашивается с основным токеном.
+          </p>
+          {destination.adsAccessTokenConfigured && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={removeAdsToken}
+                onChange={(e) => setRemoveAdsToken(e.target.checked)}
+              />
+              Удалить отдельный токен статистики
+            </label>
+          )}
+        </div>
+      )}
+
       {guide.hasTestCode && (
-        <Field label="Test Event Code (необязательно)">
-          <Input
-            value={form.testEventCode}
-            onChange={(e) => setForm({ ...form, testEventCode: e.target.value })}
-          />
-        </Field>
+        <div>
+          <Field label="Test Event Code для всех событий (необязательно)">
+            <Input
+              value={form.testEventCode}
+              onChange={(e) => setForm({ ...form, testEventCode: e.target.value })}
+            />
+          </Field>
+          <p className="mt-2 text-xs text-amber-700">
+            Пока код указан, события из CRM отправляются в тестовом режиме. Для рабочего
+            направления оставьте поле пустым; для разовой проверки используйте «Тестовое событие».
+          </p>
+        </div>
       )}
 
       <div className="flex gap-2">

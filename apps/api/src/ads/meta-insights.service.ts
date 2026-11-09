@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Destination } from '@prisma/client';
+import { createHash } from 'crypto';
 import { CryptoService } from '../common/crypto.service';
 import { Period } from '../logs/period';
 
@@ -96,6 +97,10 @@ export class MetaInsightsService {
     return `${host}/${version}`;
   }
 
+  private statsToken(destination: Destination): string {
+    return this.crypto.decrypt(destination.adsAccessToken || destination.accessToken) ?? '';
+  }
+
   /**
    * Проверка доступа к статистике: имя кабинета + пробный запрос Insights.
    * Не бросает исключений — возвращает диагностику для показа в UI.
@@ -110,7 +115,7 @@ export class MetaInsightsService {
     if (!accountId) {
       return { ok: false, error: 'В направлении не указан ID рекламного кабинета (act_…).' };
     }
-    const token = this.crypto.decrypt(destination.accessToken) ?? '';
+    const token = this.statsToken(destination);
     try {
       const res = await fetch(
         `${this.apiBase(destination)}/act_${accountId}` +
@@ -147,13 +152,16 @@ export class MetaInsightsService {
       );
     }
 
-    const cacheKey = `${destination.id}:${accountId}:${period.from}:${period.to}`;
+    // После замены/удаления токена проверяем новые права, не возвращая старый кэш.
+    const credentialKey = createHash('sha256')
+      .update(destination.adsAccessToken || destination.accessToken).digest('hex');
+    const cacheKey = `${destination.id}:${accountId}:${credentialKey}:${period.from}:${period.to}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       return cached.data;
     }
 
-    const token = this.crypto.decrypt(destination.accessToken) ?? '';
+    const token = this.statsToken(destination);
     const params = new URLSearchParams({
       level: 'ad',
       fields:

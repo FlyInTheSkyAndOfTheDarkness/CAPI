@@ -473,10 +473,15 @@ export default function Mappings() {
                 </datalist>
               </>
             </Field>
-            <Field label="Валюта">
+            <Field label="Валюта (KZT, USD, EUR, RUB)">
               <Input
                 value={form.currency}
-                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
+                placeholder="KZT"
+                pattern="[A-Z]{3}"
+                maxLength={3}
+                required
+                title="Укажите трёхбуквенный код валюты ISO 4217, например KZT."
               />
             </Field>
             <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
