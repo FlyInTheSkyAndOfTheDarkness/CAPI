@@ -171,3 +171,94 @@ export function Heatmap({ cells }: { cells: HeatCell[] }) {
     </div>
   );
 }
+
+/** Подневные столбцы одной метрики (одна серия, без второй оси). */
+export function DailyBars({
+  points,
+  label,
+  format,
+}: {
+  points: Array<{ date: string; value: number | null }>;
+  /** Название метрики — для подписи и aria */
+  label: string;
+  format: (v: number) => string;
+}) {
+  const [ref, width] = useWidth();
+  const [hover, setHover] = useState<number | null>(null);
+  const M = { top: 16, right: 12, bottom: 24, left: 64 };
+  const H = 220;
+  const plotW = Math.max(width - M.left - M.right, 60);
+  const plotH = H - M.top - M.bottom;
+  const n = Math.max(points.length, 1);
+  const slot = plotW / n;
+  const barW = Math.max(Math.min(slot - 2, 28), 2);
+  const max = Math.max(...points.map((p) => p.value ?? 0), 0);
+  // «Круглый» верх шкалы: 1/2/5 × 10^k
+  const niceMax = (() => {
+    if (max <= 0) return 1;
+    const pow = 10 ** Math.floor(Math.log10(max));
+    const step = [1, 2, 2.5, 5, 10].find((s) => s * pow >= max) ?? 10;
+    return step * pow;
+  })();
+  const y = (v: number) => M.top + plotH - (v / niceMax) * plotH;
+  const x = (i: number) => M.left + i * slot + slot / 2;
+  const labelEvery = Math.max(1, Math.ceil(40 / slot));
+
+  return (
+    <div ref={ref} className="relative">
+      <svg width={width} height={H} role="img" aria-label={`${label} по дням`}>
+        {[0, 0.5, 1].map((t) => (
+          <g key={t}>
+            <line x1={M.left} x2={M.left + plotW} y1={y(t * niceMax)} y2={y(t * niceMax)} stroke={t === 0 ? INK.baseline : INK.grid} strokeWidth={1} />
+            <text x={M.left - 6} y={y(t * niceMax)} textAnchor="end" dominantBaseline="central" fontSize={10} fill={INK.muted}>
+              {t === 0 ? '0' : format(t * niceMax)}
+            </text>
+          </g>
+        ))}
+        {points.map((p, i) => {
+          const v = p.value ?? 0;
+          if (v <= 0) return null;
+          const top = y(v);
+          const h = Math.max(M.top + plotH - top, 1);
+          const r = Math.min(4, barW / 2, h);
+          const x0 = x(i) - barW / 2;
+          const base = M.top + plotH;
+          // Скруглён только верх, низ стоит на базовой линии
+          const d = `M${x0},${base} V${top + r} Q${x0},${top} ${x0 + r},${top} H${x0 + barW - r} Q${x0 + barW},${top} ${x0 + barW},${top + r} V${base} Z`;
+          return <path key={p.date} d={d} fill={LINE} opacity={hover === null || hover === i ? 1 : 0.55} />;
+        })}
+        {points.map((p, i) =>
+          (n - 1 - i) % labelEvery === 0 ? (
+            <text key={p.date} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill={INK.muted}>
+              {fmtDay(p.date)}
+            </text>
+          ) : null,
+        )}
+        {points.map((p, i) => (
+          <rect
+            key={p.date}
+            x={M.left + i * slot}
+            y={M.top}
+            width={slot}
+            height={plotH}
+            fill="transparent"
+            onPointerEnter={() => setHover(i)}
+            onPointerLeave={() => setHover(null)}
+          />
+        ))}
+      </svg>
+      {hover !== null && points[hover] && (
+        <div
+          className="pointer-events-none absolute z-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-lg"
+          style={{ left: Math.min(Math.max(x(hover), 70), width - 70), top: 4, transform: 'translateX(-50%)' }}
+        >
+          <div className="text-slate-500">{fmtDay(points[hover].date)}</div>
+          <div className="font-semibold text-slate-900">
+            {points[hover].value == null ? 'нет данных' : format(points[hover].value!)}
+          </div>
+          <div className="text-slate-500">{label}</div>
+        </div>
+      )}
+    </div>
+  );
+}

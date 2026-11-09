@@ -36,7 +36,7 @@ export interface MetaInsightsResult {
   fetchedAt: string;
 }
 
-interface GraphError {
+export interface GraphError {
   message?: string;
   code?: number;
   error_subcode?: number;
@@ -58,7 +58,7 @@ interface InsightsApiRow {
 }
 
 /** Человекочитаемая расшифровка типовых ошибок Graph API. */
-function friendlyError(err: GraphError): string {
+export function friendlyError(err: GraphError): string {
   const m = (err.message ?? '').toLowerCase();
   if (err.code === 190) {
     return 'Токен недействителен или истёк. Перевыпустите токен системного пользователя в Business Manager.';
@@ -88,7 +88,7 @@ export class MetaInsightsService {
     return digits || null;
   }
 
-  private apiBase(destination: Destination): string {
+  apiBase(destination: Destination): string {
     const config = (destination.config ?? {}) as { apiVersion?: string };
     const version =
       config.apiVersion ?? process.env.META_GRAPH_API_VERSION ?? DEFAULT_GRAPH_API_VERSION;
@@ -97,7 +97,7 @@ export class MetaInsightsService {
     return `${host}/${version}`;
   }
 
-  private statsToken(destination: Destination): string {
+  statsToken(destination: Destination): string {
     return this.crypto.decrypt(destination.adsAccessToken || destination.accessToken) ?? '';
   }
 

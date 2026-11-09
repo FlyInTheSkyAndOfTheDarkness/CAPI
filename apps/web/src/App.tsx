@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Ads from './pages/Ads';
 import Dashboard from './pages/Dashboard';
 import Connections from './pages/Connections';
 import Destinations from './pages/Destinations';
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         {/* Аналитика переехала в дашборд — старые ссылки ведут туда же */}
         <Route path="/analytics" element={<Navigate to="/" replace />} />
+        <Route path="/ads" element={<Ads />} />
         <Route path="/connections" element={<Connections />} />
         <Route path="/destinations" element={<Destinations />} />
         <Route path="/mappings" element={<Mappings />} />

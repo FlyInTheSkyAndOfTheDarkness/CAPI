@@ -4,6 +4,7 @@ import type { Role } from '../lib/types';
 
 const FULL_NAV = [
   { to: '/', label: 'Дашборд' },
+  { to: '/ads', label: 'Реклама' },
   { to: '/connections', label: 'Подключения CRM' },
   { to: '/destinations', label: 'Направления' },
   { to: '/mappings', label: 'Маппинг событий' },

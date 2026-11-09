@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MetaInsightsService } from './meta-insights.service';
+import { META_LEVELS, MetaLevel, MetaReportService, parseIds } from './meta-report.service';
 import { resolvePeriod } from '../logs/period';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
@@ -22,6 +23,7 @@ export class AdsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metaInsights: MetaInsightsService,
+    private readonly metaReport: MetaReportService,
   ) {}
 
   /** Кампании → группы → объявления с расходом и лидами за период. */
@@ -29,6 +31,37 @@ export class AdsController {
   async meta(@WorkspaceId() workspaceId: string, @Query() query: Record<string, string>) {
     const destination = await this.ownedMeta(workspaceId, query?.destinationId);
     return this.metaInsights.insights(destination, resolvePeriod(query));
+  }
+
+  /** Ads Manager: таблица уровня (кампании / группы / объявления) за период. */
+  @Get('meta/report')
+  async report(@WorkspaceId() workspaceId: string, @Query() query: Record<string, string>) {
+    const destination = await this.ownedMeta(workspaceId, query?.destinationId);
+    return this.metaReport.report(destination, this.level(query?.level), resolvePeriod(query), {
+      campaignIds: parseIds(query?.campaignIds),
+      adsetIds: parseIds(query?.adsetIds),
+    });
+  }
+
+  /** Ads Manager: разбивка по дням для кабинета или одного объекта (level + id). */
+  @Get('meta/daily')
+  async daily(@WorkspaceId() workspaceId: string, @Query() query: Record<string, string>) {
+    const destination = await this.ownedMeta(workspaceId, query?.destinationId);
+    const id = parseIds(query?.id)?.[0];
+    if (query?.id && !id) throw new BadRequestException('Некорректный ID объекта Meta');
+    return this.metaReport.daily(
+      destination,
+      resolvePeriod(query),
+      id ? { level: this.level(query?.level), id } : undefined,
+    );
+  }
+
+  private level(value?: string): MetaLevel {
+    if (!value) return 'campaign';
+    if (!META_LEVELS.includes(value as MetaLevel)) {
+      throw new BadRequestException('level: campaign, adset или ad');
+    }
+    return value as MetaLevel;
   }
 
   /** Диагностика доступа токена к статистике кабинета. */

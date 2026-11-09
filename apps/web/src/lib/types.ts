@@ -245,3 +245,64 @@ export interface AnalyticsData {
   byConnection: BreakdownRow[];
   byMapping: BreakdownRow[];
 }
+
+/** Ads Manager (только просмотр): уровни и метрики отчёта Meta. */
+export type MetaLevel = 'campaign' | 'adset' | 'ad';
+
+export interface MetaMetrics {
+  spend: number;
+  impressions: number;
+  reach: number;
+  frequency: number;
+  clicks: number;
+  linkClicks: number;
+  ctr: number;
+  cpc: number | null;
+  cpm: number | null;
+  leads: number;
+  cpl: number | null;
+  purchases: number;
+}
+
+export interface MetaReportRow extends MetaMetrics {
+  id: string;
+  name: string;
+  status: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  adsetId: string | null;
+  adsetName: string | null;
+  objective: string | null;
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  budgetOnCampaign: boolean;
+  creative: {
+    thumbnailUrl: string | null;
+    imageUrl: string | null;
+    title: string | null;
+    body: string | null;
+    objectType: string | null;
+  } | null;
+  previewUrl: string | null;
+}
+
+export interface MetaReport {
+  level: MetaLevel;
+  currency: string;
+  accountName: string | null;
+  timezone: string | null;
+  period: { from: string; to: string };
+  rows: MetaReportRow[];
+  totals: MetaMetrics;
+  fetchedAt: string;
+}
+
+export interface MetaDaily {
+  level: MetaLevel | 'account';
+  id: string | null;
+  currency: string;
+  period: { from: string; to: string };
+  days: Array<MetaMetrics & { date: string }>;
+  totals: MetaMetrics;
+  fetchedAt: string;
+}
