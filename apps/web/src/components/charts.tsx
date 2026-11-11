@@ -177,21 +177,20 @@ export function DailyBars({
   points,
   label,
   format,
+  axisLabel = fmtDay,
+  tooltipLabel = fmtDay,
 }: {
   points: Array<{ date: string; value: number | null }>;
   /** Название метрики — для подписи и aria */
   label: string;
   format: (v: number) => string;
+  /** Подпись столбца на оси X (по умолчанию дд.мм) */
+  axisLabel?: (date: string) => string;
+  /** Подпись столбца во всплывающей подсказке */
+  tooltipLabel?: (date: string) => string;
 }) {
   const [ref, width] = useWidth();
   const [hover, setHover] = useState<number | null>(null);
-  const M = { top: 16, right: 12, bottom: 24, left: 64 };
-  const H = 220;
-  const plotW = Math.max(width - M.left - M.right, 60);
-  const plotH = H - M.top - M.bottom;
-  const n = Math.max(points.length, 1);
-  const slot = plotW / n;
-  const barW = Math.max(Math.min(slot - 2, 28), 2);
   const max = Math.max(...points.map((p) => p.value ?? 0), 0);
   // «Круглый» верх шкалы: 1/2/5 × 10^k
   const niceMax = (() => {
@@ -200,13 +199,22 @@ export function DailyBars({
     const step = [1, 2, 2.5, 5, 10].find((s) => s * pow >= max) ?? 10;
     return step * pow;
   })();
+  // Отступ слева под самую длинную подпись шкалы (≈6px на символ при 10px)
+  const longest = Math.max(format(niceMax).length, format(niceMax / 2).length);
+  const M = { top: 16, right: 12, bottom: 24, left: Math.max(48, longest * 6 + 12) };
+  const H = 220;
+  const plotW = Math.max(width - M.left - M.right, 60);
+  const plotH = H - M.top - M.bottom;
+  const n = Math.max(points.length, 1);
+  const slot = plotW / n;
+  const barW = Math.max(Math.min(slot - 2, 28), 2);
   const y = (v: number) => M.top + plotH - (v / niceMax) * plotH;
   const x = (i: number) => M.left + i * slot + slot / 2;
-  const labelEvery = Math.max(1, Math.ceil(40 / slot));
+  const labelEvery = Math.max(1, Math.ceil(48 / slot));
 
   return (
     <div ref={ref} className="relative">
-      <svg width={width} height={H} role="img" aria-label={`${label} по дням`}>
+      <svg width={width} height={H} role="img" aria-label={label}>
         {[0, 0.5, 1].map((t) => (
           <g key={t}>
             <line x1={M.left} x2={M.left + plotW} y1={y(t * niceMax)} y2={y(t * niceMax)} stroke={t === 0 ? INK.baseline : INK.grid} strokeWidth={1} />
@@ -230,7 +238,7 @@ export function DailyBars({
         {points.map((p, i) =>
           (n - 1 - i) % labelEvery === 0 ? (
             <text key={p.date} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill={INK.muted}>
-              {fmtDay(p.date)}
+              {axisLabel(p.date)}
             </text>
           ) : null,
         )}
@@ -252,7 +260,7 @@ export function DailyBars({
           className="pointer-events-none absolute z-10 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-lg"
           style={{ left: Math.min(Math.max(x(hover), 70), width - 70), top: 4, transform: 'translateX(-50%)' }}
         >
-          <div className="text-slate-500">{fmtDay(points[hover].date)}</div>
+          <div className="text-slate-500">{tooltipLabel(points[hover].date)}</div>
           <div className="font-semibold text-slate-900">
             {points[hover].value == null ? 'нет данных' : format(points[hover].value!)}
           </div>

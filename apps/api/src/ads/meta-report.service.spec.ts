@@ -3,7 +3,7 @@ import { Destination } from '@prisma/client';
 import { CryptoService } from '../common/crypto.service';
 import { resolvePeriod } from '../logs/period';
 import { MetaInsightsService } from './meta-insights.service';
-import { budget, MetaReportService, parseIds, toMetrics } from './meta-report.service';
+import { budget, MetaReportService, parseIds, periodBuckets, toMetrics } from './meta-report.service';
 
 describe('Просмотр кабинета Meta (Ads Manager)', () => {
   const crypto = new CryptoService(new ConfigService({ ENCRYPTION_KEY: 'test-key' }));
@@ -109,11 +109,53 @@ describe('Просмотр кабинета Meta (Ads Manager)', () => {
       ['2026-10-02', 50],
       ['2026-10-03', 0],
     ]);
-    expect(daily).toMatchObject({ level: 'ad', id: '99', currency: 'USD' });
+    expect(daily).toMatchObject({ level: 'ad', id: '99', currency: 'USD', granularity: 'day' });
     const insight = urls.find((u) => u.searchParams.get('time_increment') === '1')!;
     expect(JSON.parse(insight.searchParams.get('filtering')!)).toEqual([
       { field: 'ad.id', operator: 'EQUAL', value: '99' },
     ]);
+  });
+
+  it('делит период на календарные недели (пн–вс) и месяцы с обрезкой по краям', () => {
+    const p = resolvePeriod({ from: '2026-10-29', to: '2026-11-10' });
+    expect(periodBuckets(p, 'week')).toEqual([
+      { from: '2026-10-29', to: '2026-11-01' },
+      { from: '2026-11-02', to: '2026-11-08' },
+      { from: '2026-11-09', to: '2026-11-10' },
+    ]);
+    expect(periodBuckets(p, 'month')).toEqual([
+      { from: '2026-10-29', to: '2026-10-31' },
+      { from: '2026-11-01', to: '2026-11-10' },
+    ]);
+    expect(periodBuckets(p, 'day')).toHaveLength(13);
+  });
+
+  it('недели запрашивает у Meta отрезками time_ranges, а не складывает дни', async () => {
+    graph((url) => {
+      if (url.pathname.endsWith('/act_456')) return { currency: 'KZT' };
+      const ranges = url.searchParams.get('time_ranges');
+      if (ranges) {
+        return {
+          data: (JSON.parse(ranges) as Array<{ since: string; until: string }>).map((r, i) => ({
+            date_start: r.since, date_stop: r.until, spend: String(100 * (i + 1)), impressions: '1000', reach: '400',
+          })),
+        };
+      }
+      return { data: [{ spend: '300', impressions: '2000', reach: '600' }] };
+    });
+
+    const p = resolvePeriod({ from: '2026-11-01', to: '2026-11-10' });
+    const weekly = await service().daily(destination, p, undefined, 'week');
+
+    expect(weekly.granularity).toBe('week');
+    expect(weekly.days.map((d) => [d.date, d.dateTo, d.spend, d.frequency])).toEqual([
+      ['2026-11-01', '2026-11-01', 100, 2.5],
+      ['2026-11-02', '2026-11-08', 200, 2.5],
+      ['2026-11-09', '2026-11-10', 300, 2.5],
+    ]);
+    const insight = urls.find((u) => u.searchParams.has('time_ranges'))!;
+    expect(insight.searchParams.has('time_range')).toBe(false);
+    expect(insight.searchParams.has('time_increment')).toBe(false);
   });
 
   it('отдаёт понятную ошибку Meta и кэширует успешные ответы', async () => {

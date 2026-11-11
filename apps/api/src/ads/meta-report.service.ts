@@ -87,15 +87,24 @@ export interface MetaReport {
   fetchedAt: string;
 }
 
+/** Шаг разбивки во времени: день, календарная неделя (с понедельника) или месяц. */
+export type MetaGranularity = 'day' | 'week' | 'month';
+export const META_GRANULARITIES: MetaGranularity[] = ['day', 'week', 'month'];
+
 export interface MetaDailyPoint extends MetaMetrics {
+  /** Первый день отрезка, YYYY-MM-DD */
   date: string;
+  /** Последний день отрезка включительно (для дня совпадает с date) */
+  dateTo: string;
 }
 
 export interface MetaDaily {
   level: MetaLevel | 'account';
   id: string | null;
+  granularity: MetaGranularity;
   currency: string;
   period: { from: string; to: string };
+  /** Отрезки периода по выбранному шагу (имя поля историческое — «дни») */
   days: MetaDailyPoint[];
   totals: MetaMetrics;
   fetchedAt: string;
@@ -114,6 +123,7 @@ interface InsightsRow {
   ad_id?: string;
   ad_name?: string;
   date_start?: string;
+  date_stop?: string;
   impressions?: string;
   reach?: string;
   clicks?: string;
@@ -233,6 +243,32 @@ export function periodDays(period: Period): string[] {
     days.push(new Date(t).toISOString().slice(0, 10));
   }
   return days;
+}
+
+/** Сколько отрезков отправлять в одном запросе `time_ranges`. */
+const TIME_RANGES_CHUNK = 25;
+
+function mondayOf(day: string): string {
+  const t = Date.parse(`${day}T00:00:00.000Z`);
+  const shift = (new Date(t).getUTCDay() + 6) % 7;
+  return new Date(t - shift * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Делит период на отрезки: дни, календарные недели (пн–вс) или месяцы.
+ * Крайние отрезки обрезаются границами периода, как в Ads Manager.
+ */
+export function periodBuckets(period: Period, granularity: MetaGranularity): Array<{ from: string; to: string }> {
+  const days = periodDays(period);
+  if (granularity === 'day') return days.map((d) => ({ from: d, to: d }));
+  const key = (d: string) => (granularity === 'month' ? d.slice(0, 7) : mondayOf(d));
+  const buckets: Array<{ from: string; to: string; key: string }> = [];
+  for (const d of days) {
+    const last = buckets[buckets.length - 1];
+    if (last && last.key === key(d)) last.to = d;
+    else buckets.push({ from: d, to: d, key: key(d) });
+  }
+  return buckets.map(({ from, to }) => ({ from, to }));
 }
 
 @Injectable()
@@ -420,33 +456,57 @@ export class MetaReportService {
     };
   }
 
-  /** Подневная статистика кабинета (без id) или одного объекта уровня. */
+  /**
+   * Статистика кабинета (без target) или одного объекта по дням, неделям или
+   * месяцам. Недели и месяцы запрашиваются у Meta отрезками `time_ranges`, а не
+   * складываются из дней: охват и частота за неделю не равны сумме по дням.
+   */
   async daily(
     destination: Destination,
     period: Period,
     target?: { level: MetaLevel; id: string },
+    granularity: MetaGranularity = 'day',
   ): Promise<MetaDaily> {
     const accountId = this.account(destination);
     const act = `act_${accountId}`;
     const filtering: Record<string, string> = target
       ? { filtering: JSON.stringify([{ field: `${target.level}.id`, operator: 'EQUAL', value: target.id }]) }
       : {};
-    const params = { ...this.insightParams(period, 'account', {}, { time_increment: '1' }), ...filtering };
     const totalParams = { ...this.insightParams(period, 'account', {}), ...filtering };
+    const buckets = periodBuckets(period, granularity);
 
-    const [account, rows, totalRows] = await Promise.all([
+    let requests: Array<Promise<InsightsRow[]>>;
+    if (granularity === 'day') {
+      const params = { ...this.insightParams(period, 'account', {}, { time_increment: '1' }), ...filtering };
+      requests = [this.graph<InsightsRow>(destination, `${act}/insights`, params, { paged: true })];
+    } else {
+      requests = [];
+      for (let i = 0; i < buckets.length; i += TIME_RANGES_CHUNK) {
+        const ranges = buckets.slice(i, i + TIME_RANGES_CHUNK).map((b) => ({ since: b.from, until: b.to }));
+        const params: Record<string, string> = {
+          ...this.insightParams(period, 'account', {}, { time_ranges: JSON.stringify(ranges) }),
+          ...filtering,
+        };
+        delete params.time_range;
+        requests.push(this.graph<InsightsRow>(destination, `${act}/insights`, params, { paged: true }));
+      }
+    }
+
+    const [account, totalRows, ...chunks] = await Promise.all([
       this.accountInfo(destination, accountId),
-      this.graph<InsightsRow>(destination, `${act}/insights`, params, { paged: true }),
       this.graph<InsightsRow>(destination, `${act}/insights`, totalParams, { paged: true }),
+      ...requests,
     ]);
+    const rows = chunks.flat();
 
     const byDate = new Map(rows.map((r) => [r.date_start ?? '', r]));
     return {
       level: target?.level ?? 'account',
       id: target?.id ?? null,
+      granularity,
       currency: account.currency ?? rows[0]?.account_currency ?? 'USD',
       period: { from: period.from, to: period.to },
-      days: periodDays(period).map((date) => ({ date, ...toMetrics(byDate.get(date)) })),
+      days: buckets.map((b) => ({ date: b.from, dateTo: b.to, ...toMetrics(byDate.get(b.from)) })),
       totals: toMetrics(totalRows[0]),
       fetchedAt: new Date().toISOString(),
     };

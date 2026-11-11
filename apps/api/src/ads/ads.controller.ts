@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MetaInsightsService } from './meta-insights.service';
-import { META_LEVELS, MetaLevel, MetaReportService, parseIds } from './meta-report.service';
+import { META_GRANULARITIES, META_LEVELS, MetaGranularity, MetaLevel, MetaReportService, parseIds } from './meta-report.service';
 import { resolvePeriod } from '../logs/period';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceGuard } from '../common/workspace.guard';
@@ -53,7 +53,16 @@ export class AdsController {
       destination,
       resolvePeriod(query),
       id ? { level: this.level(query?.level), id } : undefined,
+      this.granularity(query?.granularity),
     );
+  }
+
+  private granularity(value?: string): MetaGranularity {
+    if (!value) return 'day';
+    if (!META_GRANULARITIES.includes(value as MetaGranularity)) {
+      throw new BadRequestException('granularity: day, week или month');
+    }
+    return value as MetaGranularity;
   }
 
   private level(value?: string): MetaLevel {

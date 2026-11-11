@@ -4,7 +4,9 @@ import { useState } from 'react';
  * Выбор периода для аналитики: быстрые пресеты + произвольный диапазон дат.
  * Даты считаются в UTC — так же, как бэкенд группирует доставки по дням.
  */
-export type PeriodPreset = 'today' | 'yesterday' | '7' | '14' | '30' | 'custom';
+export type PeriodPreset =
+  | 'today' | 'yesterday' | '7' | '14' | '30' | '90'
+  | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom';
 
 export interface PeriodValue {
   preset: PeriodPreset;
@@ -22,8 +24,32 @@ export function utcDay(daysAgo = 0): string {
 
 export const DEFAULT_PERIOD: PeriodValue = { preset: '14', from: utcDay(13), to: utcDay(0) };
 
+/** Границы календарных пресетов (неделя с понедельника), включительно. */
+function calendarRange(preset: PeriodPreset): { from: string; to: string } | null {
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+  const monday = today - ((now.getUTCDay() + 6) % 7) * DAY;
+  switch (preset) {
+    case 'this_week':
+      return { from: iso(monday), to: iso(today) };
+    case 'last_week':
+      return { from: iso(monday - 7 * DAY), to: iso(monday - DAY) };
+    case 'this_month':
+      return { from: iso(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), to: iso(today) };
+    case 'last_month': {
+      const first = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+      return { from: iso(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)), to: iso(first - DAY) };
+    }
+    default:
+      return null;
+  }
+}
+
 /** Параметры периода для эндпоинтов `/api/logs/*`. */
 export function periodParams(v: PeriodValue): Record<string, string> {
+  const calendar = calendarRange(v.preset);
+  if (calendar) return calendar;
   switch (v.preset) {
     case 'custom':
       return { from: v.from, to: v.to };
@@ -47,6 +73,14 @@ export function periodLabel(v: PeriodValue): string {
       return 'сегодня';
     case 'yesterday':
       return 'вчера';
+    case 'this_week':
+      return 'эта неделя';
+    case 'last_week':
+      return 'прошлая неделя';
+    case 'this_month':
+      return 'этот месяц';
+    case 'last_month':
+      return 'прошлый месяц';
     case 'custom':
       return v.from === v.to
         ? formatDay(v.from)
@@ -62,6 +96,11 @@ const PRESETS: Array<{ key: PeriodPreset; label: string }> = [
   { key: '7', label: '7 дней' },
   { key: '14', label: '14 дней' },
   { key: '30', label: '30 дней' },
+  { key: '90', label: '90 дней' },
+  { key: 'this_week', label: 'Эта неделя' },
+  { key: 'last_week', label: 'Прошлая неделя' },
+  { key: 'this_month', label: 'Этот месяц' },
+  { key: 'last_month', label: 'Прошлый месяц' },
 ];
 
 export default function PeriodPicker({
@@ -91,7 +130,7 @@ export default function PeriodPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
         {PRESETS.map((p) => (
           <button
             key={p.key}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import type { Destination, MetaDaily, MetaLevel, MetaMetrics, MetaReport, MetaReportRow } from '../lib/types';
+import type { Destination, MetaDaily, MetaGranularity, MetaLevel, MetaMetrics, MetaReport, MetaReportRow } from '../lib/types';
 import { Button, Card, Input, PageHeader, Select } from '../components/ui';
 import PeriodPicker, { DEFAULT_PERIOD, periodLabel, periodParams, type PeriodValue } from '../components/PeriodPicker';
 import { DailyBars } from '../components/charts';
@@ -8,7 +8,7 @@ import { DailyBars } from '../components/charts';
 /**
  * Рекламный кабинет Meta в виде Ads Manager — только просмотр.
  * Вкладки кампаний / групп / объявлений: отметьте кампании, и вкладка групп
- * покажет только их группы (как в Ads Manager). Кнопка «По дням» у строки
+ * покажет только их группы (как в Ads Manager). Кнопка «Динамика» у строки
  * переключает график и таблицу дней на выбранный объект.
  */
 
@@ -100,6 +100,33 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>;
 }
 
+const GRANULARITIES: Array<{ key: MetaGranularity; label: string; word: string; column: string }> = [
+  { key: 'day', label: 'Дни', word: 'по дням', column: 'День' },
+  { key: 'week', label: 'Недели', word: 'по неделям', column: 'Неделя' },
+  { key: 'month', label: 'Месяцы', word: 'по месяцам', column: 'Месяц' },
+];
+
+const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const ddmm = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
+const lastDayOfMonth = (iso: string) =>
+  new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)), 0)).getUTCDate();
+
+/** Подпись отрезка в таблице и подсказке: день, «02.11 — 08.11» или «ноябрь 2026». */
+function bucketLabel(from: string, to: string, g: MetaGranularity): string {
+  if (g === 'day') return `${ddmm(from)}.${from.slice(0, 4)}`;
+  if (g === 'week') return `${ddmm(from)} — ${ddmm(to)}.${to.slice(0, 4)}`;
+  const month = `${MONTHS[Number(from.slice(5, 7)) - 1]} ${from.slice(0, 4)}`;
+  const full = from.slice(8) === '01' && Number(to.slice(8)) === lastDayOfMonth(to);
+  // Неполный месяц на краю периода — показываем, какие дни вошли
+  return full ? month : `${month} (${ddmm(from)} — ${ddmm(to)})`;
+}
+
+/** Короткая подпись на оси графика. */
+function bucketAxis(from: string, g: MetaGranularity): string {
+  return g === 'month' ? `${MONTHS_SHORT[Number(from.slice(5, 7)) - 1]} ${from.slice(2, 4)}` : ddmm(from);
+}
+
 interface DailyTarget {
   level: MetaLevel;
   id: string;
@@ -122,6 +149,7 @@ export default function Ads() {
   const [target, setTarget] = useState<DailyTarget | null>(null);
   const [daily, setDaily] = useState<MetaDaily | null>(null);
   const [dailyError, setDailyError] = useState('');
+  const [granularity, setGranularity] = useState<MetaGranularity>('day');
   const [chartMetric, setChartMetric] = useState<keyof MetaMetrics>('spend');
   const [creative, setCreative] = useState<MetaReportRow | null>(null);
 
@@ -188,6 +216,7 @@ export default function Ads() {
     const qs = new URLSearchParams({
       ...periodParams(period),
       destinationId: destId,
+      granularity,
       ...(target ? { level: target.level, id: target.id } : {}),
     });
     api<MetaDaily>(`/ads/meta/daily?${qs}`)
@@ -195,12 +224,12 @@ export default function Ads() {
       .catch((e) => {
         if (cancelled) return;
         setDaily(null);
-        setDailyError(e instanceof Error ? e.message : 'Не удалось загрузить данные по дням');
+        setDailyError(e instanceof Error ? e.message : 'Не удалось загрузить динамику');
       });
     return () => {
       cancelled = true;
     };
-  }, [destId, hasAccount, period, target]);
+  }, [destId, hasAccount, period, target, granularity]);
 
   const currency = report?.currency ?? daily?.currency ?? 'USD';
 
@@ -237,6 +266,11 @@ export default function Ads() {
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: key !== 'name' }));
 
+  const step = GRANULARITIES.find((g) => g.key === granularity) ?? GRANULARITIES[0];
+  // Пока грузится новый шаг, подписи берём из уже полученных данных
+  const shown = daily?.granularity ?? granularity;
+  const shownStep = GRANULARITIES.find((g) => g.key === shown) ?? GRANULARITIES[0];
+  const dateTo = new Map((daily?.days ?? []).map((d) => [d.date, d.dateTo]));
   const metric = CHART_METRICS.find((m) => m.key === chartMetric) ?? CHART_METRICS[0];
   const formatMetric = (v: number) =>
     metric.money ? money(v, currency) : metric.percent ? `${nf2.format(v)}%` : nf.format(Math.round(v * 100) / 100);
@@ -308,18 +342,34 @@ export default function Ads() {
                   </button>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">
-                {CHART_METRICS.map((m) => (
-                  <button
-                    key={m.key}
-                    onClick={() => setChartMetric(m.key)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                      chartMetric === m.key ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="Разбивка">
+                  {GRANULARITIES.map((g) => (
+                    <button
+                      key={g.key}
+                      onClick={() => setGranularity(g.key)}
+                      aria-pressed={granularity === g.key}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                        granularity === g.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                  {CHART_METRICS.map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => setChartMetric(m.key)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                        chartMetric === m.key ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -345,19 +395,21 @@ export default function Ads() {
                     </div>
                   ))}
                 </div>
-                <h3 className="mb-1 text-sm font-medium text-slate-700">{metric.label} по дням</h3>
+                <h3 className="mb-1 text-sm font-medium text-slate-700">{metric.label} {shownStep.word}</h3>
                 <DailyBars
                   points={daily.days.map((d) => ({ date: d.date, value: d[metric.key] as number | null }))}
                   label={metric.label}
                   format={formatMetric}
+                  axisLabel={(d) => bucketAxis(d, shown)}
+                  tooltipLabel={(d) => bucketLabel(d, dateTo.get(d) ?? d, shown)}
                 />
                 <details className="mt-3">
-                  <summary className="cursor-pointer text-sm text-indigo-600">Таблица по дням</summary>
+                  <summary className="cursor-pointer text-sm text-indigo-600">Таблица {shownStep.word}</summary>
                   <div className="mt-2 max-h-96 overflow-auto">
                     <table className="w-full text-left text-sm">
                       <thead className="sticky top-0 bg-white">
                         <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                          <th className="px-2 py-2">День</th>
+                          <th className="px-2 py-2">{shownStep.column}</th>
                           {COLUMNS.map((c) => (
                             <th key={c.key} className="whitespace-nowrap px-2 py-2 text-right">
                               {c.label}
@@ -369,7 +421,7 @@ export default function Ads() {
                         {[...daily.days].reverse().map((d) => (
                           <tr key={d.date} className="border-b border-slate-100">
                             <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
-                              {d.date.slice(8, 10)}.{d.date.slice(5, 7)}.{d.date.slice(0, 4)}
+                              {bucketLabel(d.date, d.dateTo, shown)}
                             </td>
                             {COLUMNS.map((c) => (
                               <td key={c.key} className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
@@ -384,7 +436,7 @@ export default function Ads() {
                 </details>
               </>
             )}
-            {!daily && !dailyError && <p className="py-6 text-sm text-slate-400">Загружаем данные по дням…</p>}
+            {!daily && !dailyError && <p className="py-6 text-sm text-slate-400">Загружаем данные {step.word}…</p>}
           </Card>
 
           {/* Таблица Ads Manager */}
@@ -537,7 +589,7 @@ export default function Ads() {
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                               }}
                             >
-                              По дням
+                              Динамика
                             </button>
                           </td>
                         </tr>

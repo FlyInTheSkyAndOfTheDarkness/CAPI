@@ -297,12 +297,16 @@ export interface MetaReport {
   fetchedAt: string;
 }
 
+export type MetaGranularity = 'day' | 'week' | 'month';
+
 export interface MetaDaily {
   level: MetaLevel | 'account';
   id: string | null;
+  granularity: MetaGranularity;
   currency: string;
   period: { from: string; to: string };
-  days: Array<MetaMetrics & { date: string }>;
+  /** Отрезки по шагу granularity: date — первый день, dateTo — последний */
+  days: Array<MetaMetrics & { date: string; dateTo: string }>;
   totals: MetaMetrics;
   fetchedAt: string;
 }
